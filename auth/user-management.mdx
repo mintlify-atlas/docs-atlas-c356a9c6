@@ -180,16 +180,51 @@ const submittedTools = useQuery(
 
 ## Account Settings
 
-### Accessing Settings
+### Clerk Account Settings
 
-Users can access their account settings through the `UserButton` dropdown:
+Users can access their Clerk account settings through the `UserButton` dropdown:
 
 - **Profile** - Update name, avatar, and bio
 - **Security** - Change password, enable 2FA
 - **Connected Accounts** - Manage OAuth connections
 - **Delete Account** - Permanently remove account
 
-All account management is handled by Clerk's pre-built UI components.
+All Clerk account management is handled by Clerk's pre-built UI components.
+
+### Email Preferences
+
+AiVault provides a dedicated settings page at `/settings` for managing email notification preferences. Users can customize:
+
+```tsx
+type EmailPreferences = {
+  submissionUpdates: boolean;      // Submission confirmations
+  reviewStatusUpdates: boolean;    // Approval/rejection updates
+  marketingUpdates: boolean;       // Marketing and product updates
+};
+```
+
+**Available Preferences:**
+
+1. **Submission confirmations** - Get notified when you submit a new tool
+2. **Approval/rejection updates** - Receive updates on tool review status
+3. **Marketing and product updates** - Opt-in for AiVault news and features
+
+**Implementation:**
+
+Email preferences are stored in Clerk's `unsafeMetadata` for the user:
+
+```tsx app/settings/page.tsx
+await user.update({
+  unsafeMetadata: {
+    ...user.unsafeMetadata,
+    emailPreferences,
+  },
+});
+```
+
+<Info>
+  Email preferences are saved to your user profile and persist across sessions.
+</Info>
 
 ## Sign Out
 
