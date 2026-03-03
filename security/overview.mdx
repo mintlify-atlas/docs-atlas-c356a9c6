@@ -1,0 +1,144 @@
+---
+title: Security Overview
+description: AiVault's security-first architecture and protection mechanisms
+---
+
+## Security-First Design
+
+AiVault is built with a **security-first** mindset, implementing multiple layers of protection to ensure data integrity, user privacy, and system reliability.
+
+## Core Security Principles
+
+### Server-Side Validation
+
+All data mutations and critical operations derive identity directly from authorized Clerk tokens via Convex's `ctx.auth`. This ensures that:
+
+- Identity verification happens on the server, never trusting client-side data
+- All database operations are authenticated and authorized
+- No direct client access to sensitive data or admin functions
+
+```typescript
+// Identity verification in Convex functions
+async function getIdentity(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+  return identity;
+}
+```
+
+### Input Sanitization
+
+All user-submitted content is validated against Zod schemas before hitting the database:
+
+- Type validation for all inputs
+- Length and format constraints
+- SQL injection prevention through parameterized queries
+- XSS prevention through proper encoding
+
+### CSRF & XSS Protection
+
+AiVault leverages Next.js and React's built-in protections:
+
+- **CSRF Protection**: Server Actions and API routes include built-in CSRF tokens
+- **XSS Prevention**: React automatically escapes JSX content
+- **Content Security Policy**: Strict CSP headers prevent unauthorized script execution
+- **HTTP-only Cookies**: Clerk sessions use secure, HTTP-only cookies
+
+## Authentication Layer
+
+### Clerk Integration
+
+AiVault uses [Clerk](https://clerk.com/) for robust authentication:
+
+- JWT-based session management
+- Secure token validation
+- Social OAuth providers
+- Multi-factor authentication support
+- Session management and revocation
+
+### Protected Routes
+
+Route protection is enforced at the middleware level:
+
+```typescript
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/submit(.*)",
+  "/admin(.*)",
+]);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect();
+  }
+});
+```
+
+## Database Security
+
+### Convex Security Features
+
+- **Server-Side Only**: All database queries run on the server
+- **Type Safety**: Full TypeScript validation for all operations
+- **Automatic Indices**: Optimized query performance prevents DOS attacks
+- **Real-time Validation**: Schema validation on every write operation
+
+### Data Access Control
+
+- Users can only view approved tools
+- Submitters can only edit their own submissions
+- Admin-only queries protected by RBAC
+- No direct database access from client code
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="key">
+    All sensitive credentials stored securely in environment variables, never committed to version control
+  </Card>
+  
+  <Card title="Role-Based Access" icon="shield">
+    Admin privileges strictly controlled through whitelist verification on every request
+  </Card>
+  
+  <Card title="Input Validation" icon="check-circle">
+    Zod schemas validate all user input before processing or storage
+  </Card>
+  
+  <Card title="Secure Sessions" icon="lock">
+    HTTP-only, secure cookies with automatic rotation and expiration
+  </Card>
+</CardGroup>
+
+## Security Checklist
+
+Before deploying AiVault, ensure:
+
+- [ ] All environment variables configured correctly
+- [ ] Admin user IDs properly set in `NEXT_PUBLIC_ADMIN_USER_IDS`
+- [ ] Clerk webhook endpoints secured
+- [ ] Convex deployment key protected
+- [ ] Content Security Policy headers configured
+- [ ] Rate limiting enabled on API routes
+- [ ] HTTPS enforced in production
+
+## Reporting Security Issues
+
+If you discover a security vulnerability, please report it responsibly:
+
+1. **Do not** open a public GitHub issue
+2. Email security concerns to the maintainer
+3. Provide detailed reproduction steps
+4. Allow time for patching before public disclosure
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="RBAC" icon="users" href="/security/rbac">
+    Learn about role-based access control implementation
+  </Card>
+  
+  <Card title="Best Practices" icon="star" href="/security/best-practices">
+    Security best practices for deployment and maintenance
+  </Card>
+</CardGroup>

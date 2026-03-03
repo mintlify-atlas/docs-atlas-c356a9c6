@@ -1,0 +1,252 @@
+---
+title: 'Authentication Setup'
+description: 'Learn how AiVault integrates Clerk for secure authentication and protected routes'
+---
+
+AiVault uses [Clerk](https://clerk.com) for authentication, providing a secure and seamless sign-up and sign-in experience.
+
+## Overview
+
+Clerk handles all authentication concerns including:
+
+- User sign-up and sign-in flows
+- Session management
+- Protected routes via middleware
+- Integration with Convex backend
+- User profile management
+
+<Steps>
+  <Step title="Configure Environment Variables">
+    
+    Set up the required Clerk environment variables in your `.env.local` file:
+    
+    ```bash
+    # Clerk Authentication
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_publishable_key
+    CLERK_SECRET_KEY=your_secret_key
+    NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+    NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+    ```
+    
+    Get your Clerk keys from the [Clerk Dashboard](https://dashboard.clerk.com).
+    
+  </Step>
+  
+  <Step title="Provider Setup">
+    
+    AiVault wraps the application with `ClerkProvider` in the root providers file:
+    
+    ```tsx app/providers.tsx
+    import { ClerkProvider, useAuth } from "@clerk/nextjs";
+    import { ConvexProviderWithClerk } from "convex/react-clerk";
+    import { ConvexReactClient } from "convex/react";
+    
+    export default function Providers({ children }: { children: React.ReactNode }) {
+      return (
+        <ClerkProvider publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}>
+          <ConvexClientProvider>
+            {children}
+          </ConvexClientProvider>
+        </ClerkProvider>
+      );
+    }
+    ```
+    
+    The `ClerkProvider` is integrated with Convex using `ConvexProviderWithClerk` for seamless backend authentication.
+    
+  </Step>
+  
+  <Step title="Configure Convex Integration">
+    
+    AiVault connects Clerk with Convex for authenticated database queries:
+    
+    ```js convex/auth.config.js
+    export default {
+      providers: [
+        {
+          domain: "https://hopeful-ringtail-54.clerk.accounts.dev",
+          applicationID: "convex",
+        },
+      ],
+    };
+    ```
+    
+    This configuration enables Convex to verify Clerk authentication tokens.
+    
+  </Step>
+  
+  <Step title="Protect Routes with Middleware">
+    
+    AiVault uses Clerk middleware to protect specific routes:
+    
+    ```ts middleware.ts
+    import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+    
+    const isProtectedRoute = createRouteMatcher([
+      "/dashboard(.*)",
+      "/submit(.*)",
+      "/admin(.*)",
+    ]);
+    
+    export default clerkMiddleware(async (auth, req) => {
+      if (isProtectedRoute(req)) {
+        await auth.protect();
+      }
+    });
+    ```
+    
+    Protected routes:
+    - `/dashboard` - User dashboard for bookmarks and submissions
+    - `/submit` - Tool submission page
+    - `/admin` - Admin panel for reviewing submissions
+    
+  </Step>
+</Steps>
+
+## Sign Up Flow
+
+AiVault provides a dedicated sign-up page using Clerk's pre-built component:
+
+```tsx app/sign-up/[[...sign-up]]/page.tsx
+import { SignUp } from "@clerk/nextjs";
+
+export default function SignUpPage() {
+  return (
+    <div className="flex-1 flex items-center justify-center py-12">
+      <SignUp />
+    </div>
+  );
+}
+```
+
+**Features:**
+- Email and password registration
+- OAuth providers (Google, GitHub, etc.)
+- Email verification
+- Automatic session creation
+- Redirect to dashboard after sign-up
+
+## Sign In Flow
+
+The sign-in page uses Clerk's pre-built component with the same consistent UI:
+
+```tsx app/sign-in/[[...sign-in]]/page.tsx
+import { SignIn } from "@clerk/nextjs";
+
+export default function SignInPage() {
+  return (
+    <div className="flex-1 flex items-center justify-center py-12">
+      <SignIn />
+    </div>
+  );
+}
+```
+
+**Features:**
+- Email and password authentication
+- OAuth providers
+- "Remember me" option
+- Password reset functionality
+- Redirect to previous page or dashboard
+
+## Conditional UI Rendering
+
+AiVault uses Clerk's `SignedIn` and `SignedOut` components to show different UI based on authentication state:
+
+```tsx components/layout/Navbar.tsx
+import { SignInButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+
+export default function Navbar() {
+  return (
+    <nav>
+      <SignedIn>
+        {/* Links to actual application routes, not documentation */}
+        <UserButton afterSignOutUrl="/" />
+      </SignedIn>
+      
+      <SignedOut>
+        <SignInButton mode="modal">
+          <Button>Sign In</Button>
+        </SignInButton>
+      </SignedOut>
+    </nav>
+  );
+}
+```
+
+## Accessing User Data
+
+Use Clerk's `useAuth` hook to access the current user's authentication state:
+
+```tsx
+import { useAuth } from "@clerk/nextjs";
+
+export default function Dashboard() {
+  const { userId, isLoaded } = useAuth();
+  
+  if (!isLoaded) {
+    return <div>Loading...</div>;
+  }
+  
+  if (!userId) {
+    return <div>Please sign in</div>;
+  }
+  
+  return <div>Welcome, {userId}</div>;
+}
+```
+
+## Admin Access Control
+
+AiVault implements role-based access control for admin features:
+
+```tsx
+import { useAuth } from "@clerk/nextjs";
+import { isAdmin } from "@/lib/admin";
+
+function AdminLink() {
+  const { userId } = useAuth();
+  
+  if (!userId || !isAdmin(userId)) return null;
+  
+  return (
+    <Link href="/admin"> {/* Application route */}
+      <ShieldCheck className="w-4 h-4" />
+      Admin
+    </Link>
+  );
+}
+```
+
+Admin user IDs are configured via environment variable:
+
+```bash
+# Comma-separated Clerk user IDs
+NEXT_PUBLIC_ADMIN_USER_IDS=user_xxx,user_yyy
+```
+
+## Error Handling
+
+If Clerk is not properly configured, AiVault displays a setup screen:
+
+```tsx
+if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  return (
+    <div>
+      <h1>Setup Required</h1>
+      <p>Please configure your Clerk environment variables.</p>
+    </div>
+  );
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="/auth/user-management">
+    Learn about user profiles, sessions, and account settings
+  </Card>
+  <Card title="Convex Integration" icon="database" href="/development/convex-backend">
+    See how Clerk integrates with Convex queries
+  </Card>
+</CardGroup>

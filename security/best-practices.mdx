@@ -1,0 +1,463 @@
+---
+title: Security Best Practices
+description: Production-ready security configuration and maintenance guidelines
+---
+
+## Environment Variable Management
+
+### Development vs Production
+
+Always maintain separate environment configurations:
+
+<CodeGroup>
+```env .env.local (Development)
+# Clerk Authentication
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+
+# Convex Database
+NEXT_PUBLIC_CONVEX_URL=https://dev-deployment.convex.cloud
+
+# Admin Security (development user IDs)
+NEXT_PUBLIC_ADMIN_USER_IDS=user_2th_dev_admin
+
+# Resend API
+RESEND_API_KEY=re_test_...
+FROM_EMAIL=dev@localhost
+```
+
+```env Production Environment
+# Clerk Authentication (Production)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_...
+CLERK_SECRET_KEY=sk_live_...
+
+# Convex Database (Production)
+NEXT_PUBLIC_CONVEX_URL=https://prod-deployment.convex.cloud
+
+# Admin Security (production user IDs)
+NEXT_PUBLIC_ADMIN_USER_IDS=user_2th_prod_admin
+
+# Resend API (Production)
+RESEND_API_KEY=re_live_...
+FROM_EMAIL=noreply@yourdomain.com
+```
+</CodeGroup>
+
+### Secret Storage Best Practices
+
+<AccordionGroup>
+  <Accordion title="Local Development">
+    - Use `.env.local` for local secrets
+    - Add `.env.local` to `.gitignore`
+    - Never commit secrets to version control
+    - Use `.env.example` as a template (with dummy values)
+  </Accordion>
+  
+  <Accordion title="Production Deployment">
+    - Use platform-specific secret management (Vercel Environment Variables)
+    - Enable "Sensitive" flag for all secrets
+    - Use different secrets for preview vs production environments
+    - Rotate secrets regularly (quarterly recommended)
+  </Accordion>
+  
+  <Accordion title="Team Collaboration">
+    - Share secrets via secure password managers (1Password, LastPass)
+    - Document which secrets are required in README
+    - Use service accounts for production keys
+    - Implement least-privilege access
+  </Accordion>
+</AccordionGroup>
+
+## Clerk Security Configuration
+
+### Authentication Settings
+
+Configure Clerk for maximum security:
+
+<Steps>
+  <Step title="Enable Session Security">
+    In Clerk Dashboard → Sessions:
+    - Enable "Require multi-factor authentication"
+    - Set session lifetime to 7 days (or less)
+    - Enable "Auto-lock inactive sessions"
+  </Step>
+  
+  <Step title="Configure Sign-in Security">
+    In Clerk Dashboard → User & Authentication:
+    - Require email verification
+    - Enable password strength requirements
+    - Consider enabling 2FA for admin users
+  </Step>
+  
+  <Step title="Set Up Webhook Security">
+    If using Clerk webhooks:
+    - Enable webhook signature verification
+    - Use HTTPS endpoints only
+    - Store webhook signing secret securely
+  </Step>
+  
+  <Step title="Configure Allowed Domains">
+    In Clerk Dashboard → Paths:
+    - Whitelist production domain only
+    - Set correct redirect URLs
+    - Remove development URLs from production
+  </Step>
+</Steps>
+
+### JWT Token Configuration
+
+Ensure proper JWT handling:
+
+```typescript
+// Convex automatically validates Clerk JWTs
+// Ensure your convex/auth.config.js is properly configured
+export default {
+  providers: [
+    {
+      domain: process.env.CLERK_JWT_ISSUER_DOMAIN,
+      applicationID: "convex",
+    },
+  ],
+};
+```
+
+## Convex Security Rules
+
+### Database Schema Validation
+
+Define strict schemas for all tables:
+
+```typescript
+import { defineSchema, defineTable } from "convex/server";
+import { v } from "convex/values";
+
+export default defineSchema({
+  tools: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    description: v.string(),
+    category: v.string(),
+    websiteUrl: v.string(),
+    pricing: v.string(),
+    submittedBy: v.string(), // Clerk User ID
+    approved: v.boolean(),
+    upvotes: v.number(),
+    createdAt: v.number(),
+    // ... more fields
+  })
+    .index("by_slug", ["slug"])
+    .index("by_approved", ["approved"])
+    .index("by_submittedBy", ["submittedBy"]),
+});
+```
+
+### Query Optimization
+
+Properly index queries to prevent performance-based DOS:
+
+```typescript
+// Good: Uses index for efficient querying
+const approvedTools = await ctx.db
+  .query("tools")
+  .withIndex("by_approved", (q) => q.eq("approved", true))
+  .collect();
+
+// Bad: Full table scan (avoid in production)
+const allTools = await ctx.db.query("tools").collect();
+const approved = allTools.filter(t => t.approved);
+```
+
+### Rate Limiting
+
+Consider implementing rate limiting for mutations:
+
+```typescript
+// Example rate limiting pattern
+export const submitTool = mutation({
+  args: { /* ... */ },
+  handler: async (ctx, args) => {
+    const identity = await getIdentity(ctx);
+    
+    // Check recent submissions
+    const recentSubmissions = await ctx.db
+      .query("tools")
+      .withIndex("by_submittedBy", (q) => 
+        q.eq("submittedBy", identity.subject)
+      )
+      .filter((q) => 
+        q.gt(q.field("createdAt"), Date.now() - 3600000) // Last hour
+      )
+      .collect();
+    
+    if (recentSubmissions.length >= 5) {
+      throw new Error("Rate limit exceeded. Please try again later.");
+    }
+    
+    // Proceed with submission
+  },
+});
+```
+
+## Input Validation with Zod
+
+### Client-Side Validation
+
+Validate form inputs before submission:
+
+```typescript
+import { z } from "zod";
+
+export const toolSubmissionSchema = z.object({
+  name: z.string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must be less than 100 characters")
+    .trim(),
+  description: z.string()
+    .min(10, "Description must be at least 10 characters")
+    .max(500, "Description must be less than 500 characters")
+    .trim(),
+  websiteUrl: z.string()
+    .url("Must be a valid URL")
+    .startsWith("https://", "URL must use HTTPS"),
+  category: z.enum(["Writing", "Image", "Coding", "Video", "Audio", "Other"]),
+  pricing: z.enum(["Free", "Freemium", "Paid"]),
+  tags: z.array(z.string())
+    .min(1, "At least one tag required")
+    .max(10, "Maximum 10 tags allowed"),
+});
+```
+
+### Server-Side Validation
+
+Always re-validate on the server:
+
+```typescript
+export const submitTool = mutation({
+  args: { /* Convex validators */ },
+  handler: async (ctx, args) => {
+    // Additional server-side checks
+    if (args.name.length > 100) {
+      throw new Error("Name too long");
+    }
+    
+    // URL validation
+    if (!args.websiteUrl.startsWith("https://")) {
+      throw new Error("Website URL must use HTTPS");
+    }
+    
+    // Sanitize inputs
+    const sanitizedName = args.name.trim();
+    const sanitizedDescription = args.description.trim();
+    
+    // Proceed with insertion
+  },
+});
+```
+
+## Content Security Policy
+
+### Next.js Headers Configuration
+
+Add security headers in `next.config.js`:
+
+```javascript
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on'
+          },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload'
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN'
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block'
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin'
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+## Production Deployment Checklist
+
+<AccordionGroup>
+  <Accordion title="Environment Configuration">
+    - [ ] All production environment variables set
+    - [ ] Development keys removed from production
+    - [ ] Admin user IDs updated for production
+    - [ ] Database URLs point to production instance
+    - [ ] Email settings configured correctly
+  </Accordion>
+  
+  <Accordion title="Authentication & Authorization">
+    - [ ] Clerk configured with production keys
+    - [ ] Session security settings enabled
+    - [ ] Admin whitelist contains only production users
+    - [ ] Email verification required
+    - [ ] Password requirements enforced
+  </Accordion>
+  
+  <Accordion title="API & Database Security">
+    - [ ] Convex production deployment created
+    - [ ] Database indices properly configured
+    - [ ] Rate limiting implemented
+    - [ ] Input validation on all mutations
+    - [ ] Error messages don't leak sensitive data
+  </Accordion>
+  
+  <Accordion title="Infrastructure Security">
+    - [ ] HTTPS enforced (no HTTP)
+    - [ ] Security headers configured
+    - [ ] CORS properly configured
+    - [ ] API routes protected
+    - [ ] Logging and monitoring enabled
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring & Auditing
+
+### Security Logging
+
+Implement audit logs for critical operations:
+
+```typescript
+export const approveTool = mutation({
+  args: { toolId: v.id("tools") },
+  handler: async (ctx, args) => {
+    const identity = await checkAdmin(ctx);
+    
+    // Log admin action
+    await ctx.db.insert("audit_logs", {
+      action: "approve_tool",
+      toolId: args.toolId,
+      adminId: identity.subject,
+      timestamp: Date.now(),
+    });
+    
+    await ctx.db.patch(args.toolId, { approved: true });
+  },
+});
+```
+
+### Monitoring Checklist
+
+- [ ] Track failed authentication attempts
+- [ ] Monitor unusual admin activity
+- [ ] Alert on rapid submission rates
+- [ ] Log all database mutations
+- [ ] Track API error rates
+
+## Incident Response
+
+### Security Breach Protocol
+
+If you suspect a security breach:
+
+<Steps>
+  <Step title="Immediate Actions">
+    - Revoke potentially compromised API keys
+    - Rotate all secrets immediately
+    - Review recent admin actions
+    - Check for unauthorized data access
+  </Step>
+  
+  <Step title="Investigation">
+    - Review audit logs
+    - Check Clerk authentication logs
+    - Analyze Convex function calls
+    - Identify scope of breach
+  </Step>
+  
+  <Step title="Remediation">
+    - Patch security vulnerability
+    - Reset affected user sessions
+    - Update security configurations
+    - Deploy fixes
+  </Step>
+  
+  <Step title="Post-Incident">
+    - Document incident details
+    - Notify affected users if necessary
+    - Update security procedures
+    - Schedule security review
+  </Step>
+</Steps>
+
+## Regular Maintenance
+
+### Quarterly Security Review
+
+- Audit admin user list (remove inactive admins)
+- Rotate API keys and secrets
+- Review and update dependencies
+- Check for new security advisories
+- Test authentication flows
+- Review access logs for anomalies
+
+### Dependency Updates
+
+```bash
+# Check for security vulnerabilities
+npm audit
+
+# Update dependencies
+npm update
+
+# Check for major version updates
+npx npm-check-updates
+```
+
+## Resources
+
+<CardGroup cols={2}>
+  <Card title="Clerk Security" icon="shield" href="https://clerk.com/docs/security">
+    Official Clerk security documentation
+  </Card>
+  
+  <Card title="Convex Security" icon="database" href="https://docs.convex.dev/auth">
+    Convex authentication and authorization guide
+  </Card>
+  
+  <Card title="Next.js Security" icon="shield-check" href="https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy">
+    Next.js security best practices
+  </Card>
+  
+  <Card title="OWASP Top 10" icon="list" href="https://owasp.org/www-project-top-ten/">
+    Common web application security risks
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Overview" icon="shield" href="/security/overview">
+    Review AiVault's security architecture
+  </Card>
+  
+  <Card title="RBAC" icon="users" href="/security/rbac">
+    Configure role-based access control
+  </Card>
+</CardGroup>

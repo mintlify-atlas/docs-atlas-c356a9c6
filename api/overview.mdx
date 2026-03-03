@@ -1,0 +1,175 @@
+---
+title: 'API Overview'
+description: 'Understanding the AiVault Convex API structure'
+icon: 'code'
+---
+
+## Introduction
+
+AiVault uses [Convex](https://convex.dev) as its backend platform. Convex provides real-time queries and mutations that are type-safe and automatically reactive.
+
+## API Structure
+
+The AiVault API is organized into three main modules:
+
+- **Tools API** - Core functionality for managing AI tools
+- **Bookmarks API** - User bookmark management
+- **Reviews API** - User reviews and ratings
+
+## Queries vs Mutations
+
+### Queries
+
+Queries are **read-only** operations that fetch data. They are:
+- Automatically cached and reactive
+- Re-executed when underlying data changes
+- Cannot modify database state
+
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function MyComponent() {
+  const tools = useQuery(api.tools.getTools, {
+    category: "Chatbots",
+    sort: "upvotes"
+  });
+  
+  return <div>{tools?.map(tool => tool.name)}</div>;
+}
+```
+
+### Mutations
+
+Mutations are **write operations** that modify data. They:
+- Can insert, update, or delete records
+- Return values immediately
+- Trigger reactive updates to queries
+
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function MyComponent() {
+  const submitTool = useMutation(api.tools.submitTool);
+  
+  const handleSubmit = async () => {
+    await submitTool({
+      name: "My AI Tool",
+      description: "An amazing AI tool",
+      category: "Chatbots",
+      tags: ["ai", "chat"],
+      websiteUrl: "https://example.com",
+      pricing: "Free"
+    });
+  };
+  
+  return <button onClick={handleSubmit}>Submit Tool</button>;
+}
+```
+
+## Authentication Requirements
+
+Most API operations require authentication through Clerk:
+
+- **Public queries** - No authentication required:
+  - `getTools`
+  - `getToolBySlug`
+  - `getToolById`
+  - `getRelatedTools`
+  - `getFeaturedTools`
+  - `getStats`
+
+- **Authenticated operations** - User must be signed in:
+  - `getSubmittedTools`
+  - `submitTool`
+  - `upvoteTool`
+  - `getBookmarks`
+  - `toggleBookmark`
+  - `isBookmarked`
+  - `addReview`
+
+- **Admin-only operations** - Requires admin user ID:
+  - `getPendingTools`
+  - `approveTool`
+  - `rejectTool`
+  - `getAdminStats`
+
+Authentication errors throw:
+```
+Error: "Unauthenticated" - User not signed in
+Error: "Unauthorized: Admin access required" - Non-admin user
+```
+
+## Error Handling
+
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function MyComponent() {
+  const submitTool = useMutation(api.tools.submitTool);
+  
+  const handleSubmit = async () => {
+    try {
+      await submitTool({ /* ... */ });
+    } catch (error) {
+      if (error.message === "Unauthenticated") {
+        // Redirect to sign in
+      }
+    }
+  };
+}
+```
+
+## Calling from Server Components
+
+For Next.js Server Components, use Convex's server-side API:
+
+```typescript
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../convex/_generated/api";
+
+const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+export default async function Page() {
+  const tools = await convex.query(api.tools.getTools, {
+    category: "Chatbots"
+  });
+  
+  return <div>{tools.map(tool => tool.name)}</div>;
+}
+```
+
+## Real-Time Updates
+
+Convex queries automatically update when data changes:
+
+```typescript
+function ToolsList() {
+  // This component will automatically re-render when tools change
+  const tools = useQuery(api.tools.getTools, {});
+  
+  return (
+    <div>
+      {tools?.map(tool => (
+        <ToolCard key={tool._id} tool={tool} />
+      ))}
+    </div>
+  );
+}
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Tools API" icon="wrench" href="/api/tools">
+    Manage AI tools, submissions, and approvals
+  </Card>
+  <Card title="Bookmarks API" icon="bookmark" href="/api/bookmarks">
+    User bookmarking functionality
+  </Card>
+  <Card title="Reviews API" icon="star" href="/api/reviews">
+    User reviews and ratings
+  </Card>
+</CardGroup>

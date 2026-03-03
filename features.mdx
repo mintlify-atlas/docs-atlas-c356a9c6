@@ -1,0 +1,332 @@
+---
+title: Features
+description: Explore AiVault's powerful features including real-time search, bookmarks, admin dashboard, and more
+---
+
+# Features Overview
+
+AiVault is packed with powerful features designed to make discovering and managing AI tools effortless. Built on a modern tech stack with Convex and Clerk, every feature is optimized for performance and security.
+
+## Real-time Search & Filtering
+
+<Card title="Advanced Discovery System" icon="magnifying-glass">
+  AiVault's search and filtering system provides instant results without page reloads, powered by Convex's reactive backend.
+</Card>
+
+### Multi-Layer Filtering
+
+Filter tools by multiple criteria simultaneously:
+
+```typescript
+export const getTools = query({
+  args: {
+    category: v.optional(v.string()),
+    pricing: v.optional(v.string()),
+    search: v.optional(v.string()),
+    sort: v.optional(v.string()), // "newest", "upvotes"
+  },
+  handler: async (ctx: QueryCtx, args) => {
+    let toolsQuery;
+    
+    if (args.category && args.category !== "All") {
+      toolsQuery = ctx.db
+        .query("tools")
+        .withIndex("by_category", (q) => q.eq("category", args.category!));
+    } else {
+      toolsQuery = ctx.db
+        .query("tools")
+        .withIndex("by_approved", (q) => q.eq("approved", true));
+    }
+    
+    let tools = await toolsQuery.collect();
+    
+    // Filter by pricing
+    if (args.pricing && args.pricing !== "All") {
+      tools = tools.filter((t) => t.pricing === args.pricing);
+    }
+    
+    // Filter by search query
+    if (args.search) {
+      const searchLower = args.search.toLowerCase();
+      tools = tools.filter(
+        (t) =>
+          t.name.toLowerCase().includes(searchLower) ||
+          t.description.toLowerCase().includes(searchLower) ||
+          t.tags.some((tag) => tag.toLowerCase().includes(searchLower))
+      );
+    }
+    
+    // Sort results
+    if (args.sort === "upvotes") {
+      tools.sort((a, b) => b.upvotes - a.upvotes);
+    } else {
+      tools.sort((a, b) => b.createdAt - a.createdAt);
+    }
+    
+    return tools;
+  },
+});
+```
+
+**Filter Options:**
+- **Category:** Writing, Image, Coding, Video, Audio, and more
+- **Pricing:** Free, Freemium, Paid
+- **Search:** Name, description, and tags
+- **Sort:** Newest first or by upvotes
+
+<Tip>
+  All queries use Convex indices for optimal performance. Category and approval status are indexed for instant lookups.
+</Tip>
+
+## Tool Submission & Moderation
+
+<Card title="Quality-Controlled Directory" icon="shield-check">
+  Every tool submission goes through a review process to maintain directory quality and prevent spam.
+</Card>
+
+### Submission Process
+
+Users can submit tools with comprehensive information:
+
+- **Basic Info:** Name, description, category, website URL
+- **Metadata:** Tags, pricing type, pricing details, logo
+- **Rich Content:** Long description, features, use cases, pros & cons
+- **Platform Support:** Web, iOS, Android, Desktop, API, Chrome Extension
+- **Social Links:** Twitter, GitHub, Discord
+
+### Admin Moderation
+
+Admins have full control over submissions:
+
+```typescript
+// Approve a tool submission
+export const approveTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    await ctx.db.patch(args.toolId, { approved: true });
+    return { success: true };
+  },
+});
+
+// Reject a tool submission
+export const rejectTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    reason: v.optional(v.string()),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    const tool = await ctx.db.get(args.toolId);
+    await ctx.db.delete(args.toolId);
+    return { success: true, tool, reason: args.reason };
+  },
+});
+```
+
+<Warning>
+  Admin access is strictly enforced via RBAC (Role-Based Access Control). Admin user IDs are whitelisted in environment variables.
+</Warning>
+
+## Bookmarks System
+
+<Card title="Save Your Favorites" icon="bookmark">
+  Authenticated users can bookmark tools for quick access later.
+</Card>
+
+The bookmark system uses a dedicated table with composite indices:
+
+```typescript
+bookmarks: defineTable({
+  userId: v.string(),
+  toolId: v.id("tools"),
+})
+  .index("by_userId", ["userId"])
+  .index("by_toolId", ["toolId"])
+  .index("by_userId_and_toolId", ["userId", "toolId"]),
+```
+
+**Features:**
+- Add/remove bookmarks in real-time
+- View all your bookmarked tools in one place
+- Bookmarks sync across devices automatically
+- Fast lookups with Convex indices
+
+## Admin Dashboard
+
+<Card title="Comprehensive Control Panel" icon="gauge">
+  Admins have access to a powerful dashboard for managing tools, reviewing submissions, and monitoring analytics.
+</Card>
+
+### Dashboard Features
+
+**1. Real-time Statistics**
+
+```typescript
+export const getAdminStats = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx);
+    
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+    
+    const pendingTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+    
+    const categories = new Set(approvedTools.map((t) => t.category));
+    const totalUpvotes = approvedTools.reduce((sum, t) => sum + t.upvotes, 0);
+    const featuredCount = approvedTools.filter((t) => t.featured).length;
+    
+    return {
+      totalTools: approvedTools.length + pendingTools.length,
+      approvedCount: approvedTools.length,
+      pendingCount: pendingTools.length,
+      totalCategories: categories.size,
+      totalFeatured: featuredCount,
+      totalUpvotes,
+    };
+  },
+});
+```
+
+**2. Pending Submissions Queue**
+
+View all pending submissions with:
+- Tool details and metadata
+- Submitter information
+- Submission timestamp
+- Quick approve/reject actions
+
+**3. Automated Notifications**
+
+Integrated with Resend for email notifications:
+- Approval confirmations sent to submitters
+- Rejection notices with feedback
+- Custom transactional templates
+
+<Tip>
+  The admin dashboard uses real-time queries, so stats update automatically as users submit tools or interact with the platform.
+</Tip>
+
+## Security Features
+
+<Card title="Security-First Architecture" icon="lock">
+  AiVault is designed with enterprise-grade security from the ground up.
+</Card>
+
+**Security Measures:**
+
+1. **Server-Side Validation:** All data mutations derive identity from authorized Clerk tokens via `ctx.auth`
+
+```typescript
+async function getIdentity(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+  return identity;
+}
+
+async function checkAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+  
+  if (!getAdminIds().includes(identity.subject)) {
+    throw new Error("Unauthorized: Admin access required");
+  }
+  return identity;
+}
+```
+
+2. **RBAC (Role-Based Access Control):** Admin access whitelist stored in secure environment variables
+
+3. **Input Sanitization:** All user-submitted content validated against Zod schemas
+
+4. **CSRF & XSS Protection:** Leverages Next.js and React's built-in protections with strict Content Security Policies
+
+## Mobile Experience
+
+<Card title="Mobile-First Design" icon="mobile">
+  AiVault features a completely overhauled mobile experience with responsive design.
+</Card>
+
+**Mobile Features:**
+- Drawer-based filtering system for easy access on small screens
+- Responsive navigation menu
+- Touch-optimized interactions
+- Smooth animations with Framer Motion
+- Optimized performance for mobile devices
+
+## Analytics & Monitoring
+
+<Card title="Track Engagement" icon="chart-line">
+  Real-time analytics for tracking tool performance and user engagement.
+</Card>
+
+**Public Statistics:**
+
+```typescript
+export const getStats = query({
+  handler: async (ctx: QueryCtx) => {
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+    
+    const categories = new Set(approvedTools.map((t) => t.category));
+    const totalUpvotes = approvedTools.reduce((sum, t) => sum + t.upvotes, 0);
+    const featuredCount = approvedTools.filter((t) => t.featured).length;
+    
+    return {
+      totalTools: approvedTools.length,
+      totalCategories: categories.size,
+      totalFeatured: featuredCount,
+      totalUpvotes,
+    };
+  },
+});
+```
+
+**Tracked Metrics:**
+- Total approved tools
+- Number of categories
+- Featured tools count
+- Total upvotes across all tools
+- User engagement rates
+
+## Reviews & Ratings
+
+<Card title="Community Feedback" icon="star">
+  Users can leave reviews and ratings on tools they've used.
+</Card>
+
+The review system includes:
+
+```typescript
+reviews: defineTable({
+  userId: v.string(),
+  toolId: v.id("tools"),
+  rating: v.number(),
+  comment: v.string(),
+  createdAt: v.number(),
+})
+  .index("by_toolId", ["toolId"])
+  .index("by_userId", ["userId"]),
+```
+
+**Features:**
+- Star ratings (1-5)
+- Written reviews
+- User attribution
+- Timestamp tracking
+- Fast queries with Convex indices
+
+<Note>
+  More features are coming soon! Check the roadmap in the introduction for upcoming enhancements like AI-powered recommendations, comparison tools, and API access.
+</Note>

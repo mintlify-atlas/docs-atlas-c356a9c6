@@ -1,0 +1,206 @@
+---
+title: Content Moderation
+description: Review and moderate tool submissions with the approval and rejection workflow
+---
+
+The moderation system allows admins to review pending tool submissions and either approve them for public listing or reject them with detailed feedback.
+
+## Reviewing Pending Submissions
+
+Pending tools are fetched using the `getPendingTools` query in `convex/tools.ts:139-147`:
+
+```typescript
+export const getPendingTools = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx);
+    return await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+  },
+});
+```
+
+### Tool Information Available
+
+Each pending submission displays:
+
+- **Basic Details**: Name, description, category, pricing
+- **Visual Assets**: Logo or generated initial avatar
+- **Tags**: All associated tags for searchability
+- **Metadata**: Submitter ID, submission date, website URL
+- **Extended Details**: Long description, features, pros/cons, use cases
+- **Social Links**: Twitter, GitHub, Discord (if provided)
+
+## Approval Process
+
+<Steps>
+  <Step title="Click Approve Button">
+    From either the dashboard list or detailed tool view, click the green **Approve Tool** button.
+  </Step>
+  
+  <Step title="Confirm Approval">
+    A confirmation dialog appears asking you to confirm. This prevents accidental approvals.
+    
+    The dialog displays:
+    - Green checkmark icon
+    - "Confirm Approval" heading
+    - Warning that tool will be immediately visible
+    - Cancel and Confirm buttons
+  </Step>
+  
+  <Step title="Tool is Approved">
+    The `approveTool` mutation is called with `sendEmail: true`:
+    
+    ```typescript
+    await approveTool({ toolId, sendEmail: true });
+    ```
+    
+    This updates the tool's `approved` field to `true` in the database.
+  </Step>
+  
+  <Step title="Email Sent">
+    The submitter automatically receives an approval email notification (see [Email Notifications](/admin/email-notifications)).
+  </Step>
+  
+  <Step title="Tool Goes Live">
+    The approved tool immediately appears:
+    - In the public tools directory
+    - In search results
+    - In its category listing
+    - At its unique URL: `/tools/{slug}`
+  </Step>
+</Steps>
+
+### Approval Mutation
+
+The approval is handled by `convex/tools.ts:207-217`:
+
+```typescript
+export const approveTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    await ctx.db.patch(args.toolId, { approved: true });
+    return { success: true };
+  },
+});
+```
+
+## Rejection Process
+
+<Steps>
+  <Step title="Click Reject Button">
+    Click the **Reject Tool** button (ghost variant with red text).
+  </Step>
+  
+  <Step title="Provide Rejection Reason">
+    A dialog opens with:
+    - Red alert shield icon
+    - "Reject Submission" heading
+    - Required textarea for rejection reason
+    - Placeholder text with example reasons
+    
+    Example reasons:
+    - Broken website link
+    - Low quality description
+    - Duplicate submission
+    - Inappropriate content
+    - Incomplete information
+  </Step>
+  
+  <Step title="Confirm Rejection">
+    Click **Send Rejection** to confirm. The reason field is required - you cannot submit without providing feedback.
+  </Step>
+  
+  <Step title="Tool is Deleted">
+    The `rejectTool` mutation permanently deletes the tool from the database:
+    
+    ```typescript
+    await rejectTool({ toolId, reason: rejectReason, sendEmail: true });
+    ```
+  </Step>
+  
+  <Step title="Email with Feedback">
+    The submitter receives an email with:
+    - Notification of rejection
+    - Your detailed feedback/reason
+    - Invitation to resubmit after addressing issues
+  </Step>
+</Steps>
+
+### Rejection Mutation
+
+The rejection is handled by `convex/tools.ts:219-232`:
+
+```typescript
+export const rejectTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    reason: v.optional(v.string()),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    // Get tool data before deletion for email
+    const tool = await ctx.db.get(args.toolId);
+    await ctx.db.delete(args.toolId);
+    return { success: true, tool, reason: args.reason };
+  },
+});
+```
+
+<Warning>
+  Rejections are permanent and delete the tool from the database. Make sure to provide clear, actionable feedback so submitters can improve and resubmit.
+</Warning>
+
+## Review Actions Component
+
+The UI for approve/reject actions is implemented in `components/tools/AdminReviewActions.tsx:29-151`:
+
+```typescript
+export function AdminReviewActions({
+  toolId,
+  isApproving,
+  isRejecting,
+  rejectReason,
+  setRejectReason,
+  handleApprove,
+  handleReject,
+  isDialogOpen,
+  setIsDialogOpen,
+}: AdminReviewActionsProps)
+```
+
+Key features:
+- Disabled states during processing
+- Loading spinners with `Loader2` icon
+- Confirmation dialogs using shadcn/ui Dialog component
+- Required rejection reason with validation
+- Visual feedback with scale animations on hover/click
+
+## Detailed Tool View
+
+When viewing a tool at `/admin/tools/[id]`, admins see the full `AdminToolDetailView` component which displays:
+
+<CardGroup cols={2}>
+  <Card title="Header Section" icon="heading">
+    Large logo, name, approval status badge, full description
+  </Card>
+  <Card title="Metadata Grid" icon="table">
+    Category, pricing, website, submission date and submitter
+  </Card>
+  <Card title="Content Sections" icon="file-lines">
+    Long description, key features list, pros and cons
+  </Card>
+  <Card title="Social Links" icon="share-nodes">
+    Twitter, GitHub, and Discord links if provided
+  </Card>
+</CardGroup>
+
+<Tip>
+  Use the detailed view to thoroughly review all aspects of a submission before making a decision.
+</Tip>

@@ -1,0 +1,565 @@
+---
+title: 'Tools API'
+description: 'Complete reference for the Tools API endpoints'
+icon: 'wrench'
+---
+
+## Overview
+
+The Tools API provides all functionality for managing AI tools in AiVault. It includes queries for fetching tools with various filters, mutations for submitting and moderating tools, and statistics endpoints.
+
+---
+
+## Queries
+
+### getTools
+
+Fetch a filtered and sorted list of approved tools.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:28`
+
+<ParamField path="category" type="string" optional>
+  Filter by category (e.g., "Chatbots", "Image Generation"). Use "All" to skip filtering.
+</ParamField>
+
+<ParamField path="pricing" type="string" optional>
+  Filter by pricing model: "Free", "Freemium", or "Paid". Use "All" to skip filtering.
+</ParamField>
+
+<ParamField path="search" type="string" optional>
+  Search query to match against tool name, description, or tags (case-insensitive).
+</ParamField>
+
+<ParamField path="sort" type="string" optional>
+  Sort order: "newest" (default) or "upvotes"
+</ParamField>
+
+<ResponseField name="tools" type="Tool[]">
+  Array of approved tools matching the filters
+  
+  <Expandable title="Tool Object">
+    <ResponseField name="_id" type="Id<'tools'>">
+      Unique tool identifier
+    </ResponseField>
+    <ResponseField name="name" type="string">
+      Tool name
+    </ResponseField>
+    <ResponseField name="slug" type="string">
+      URL-friendly identifier
+    </ResponseField>
+    <ResponseField name="description" type="string">
+      Short description
+    </ResponseField>
+    <ResponseField name="longDescription" type="string" optional>
+      Detailed description
+    </ResponseField>
+    <ResponseField name="category" type="string">
+      Tool category
+    </ResponseField>
+    <ResponseField name="tags" type="string[]">
+      Array of tags
+    </ResponseField>
+    <ResponseField name="websiteUrl" type="string">
+      Tool website URL
+    </ResponseField>
+    <ResponseField name="logoUrl" type="string" optional>
+      Tool logo URL
+    </ResponseField>
+    <ResponseField name="pricing" type="string">
+      "Free", "Freemium", or "Paid"
+    </ResponseField>
+    <ResponseField name="pricingDetails" type="string" optional>
+      Detailed pricing information
+    </ResponseField>
+    <ResponseField name="upvotes" type="number">
+      Number of upvotes
+    </ResponseField>
+    <ResponseField name="approved" type="boolean">
+      Approval status
+    </ResponseField>
+    <ResponseField name="createdAt" type="number">
+      Timestamp in milliseconds
+    </ResponseField>
+    <ResponseField name="featured" type="boolean" optional>
+      Whether tool is featured
+    </ResponseField>
+    <ResponseField name="isNew" type="boolean" optional>
+      Whether tool is marked as new
+    </ResponseField>
+    <ResponseField name="features" type="string[]" optional>
+      Array of features
+    </ResponseField>
+    <ResponseField name="useCases" type="string[]" optional>
+      Array of use cases
+    </ResponseField>
+    <ResponseField name="pros" type="string[]" optional>
+      Array of pros
+    </ResponseField>
+    <ResponseField name="cons" type="string[]" optional>
+      Array of cons
+    </ResponseField>
+    <ResponseField name="platforms" type="string[]" optional>
+      Supported platforms ("Web", "iOS", "Android", "Desktop", "API", "Chrome Extension")
+    </ResponseField>
+    <ResponseField name="twitterUrl" type="string" optional>
+      Twitter profile URL
+    </ResponseField>
+    <ResponseField name="githubUrl" type="string" optional>
+      GitHub repository URL
+    </ResponseField>
+    <ResponseField name="discordUrl" type="string" optional>
+      Discord server URL
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+const tools = useQuery(api.tools.getTools, {
+  category: "Chatbots",
+  pricing: "Free",
+  search: "gpt",
+  sort: "upvotes"
+});
+```
+
+---
+
+### getToolBySlug
+
+Fetch a single tool by its URL slug.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:86`
+
+<ParamField path="slug" type="string" required>
+  URL-friendly tool identifier
+</ParamField>
+
+<ResponseField name="tool" type="Tool | null">
+  Tool object if found, null otherwise
+</ResponseField>
+
+```typescript
+const tool = useQuery(api.tools.getToolBySlug, {
+  slug: "chatgpt"
+});
+```
+
+---
+
+### getToolById
+
+Fetch a single tool by its ID.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:96`
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  Unique tool identifier
+</ParamField>
+
+<ResponseField name="tool" type="Tool | null">
+  Tool object if found, null otherwise
+</ResponseField>
+
+```typescript
+const tool = useQuery(api.tools.getToolById, {
+  toolId: "jd7a8f9a8sd9f8a9sd8f9a" as Id<"tools">
+});
+```
+
+---
+
+### getRelatedTools
+
+Fetch related tools in the same category, sorted by upvotes.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:103`
+
+<ParamField path="category" type="string" required>
+  Tool category to match
+</ParamField>
+
+<ParamField path="excludeSlug" type="string" required>
+  Slug of tool to exclude from results (typically the current tool)
+</ParamField>
+
+<ResponseField name="tools" type="Tool[]">
+  Up to 4 approved related tools, sorted by upvotes
+</ResponseField>
+
+```typescript
+const relatedTools = useQuery(api.tools.getRelatedTools, {
+  category: "Chatbots",
+  excludeSlug: "chatgpt"
+});
+```
+
+---
+
+### getFeaturedTools
+
+Fetch all featured tools.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:118`
+
+**Parameters:** None
+
+<ResponseField name="tools" type="Tool[]">
+  Array of featured tools, sorted by creation date (newest first)
+</ResponseField>
+
+```typescript
+const featuredTools = useQuery(api.tools.getFeaturedTools, {});
+```
+
+---
+
+### getSubmittedTools
+
+Fetch all tools submitted by the authenticated user.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:128`
+
+**Authentication:** Required
+
+**Parameters:** None
+
+<ResponseField name="tools" type="Tool[]">
+  Array of tools submitted by the current user (both approved and pending)
+</ResponseField>
+
+```typescript
+const myTools = useQuery(api.tools.getSubmittedTools, {});
+```
+
+---
+
+### getPendingTools
+
+Fetch all tools pending approval.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:139`
+
+**Authentication:** Admin required
+
+**Parameters:** None
+
+<ResponseField name="tools" type="Tool[]">
+  Array of unapproved tools
+</ResponseField>
+
+```typescript
+const pendingTools = useQuery(api.tools.getPendingTools, {});
+```
+
+---
+
+### getStats
+
+Fetch public platform statistics.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:234`
+
+**Parameters:** None
+
+<ResponseField name="stats" type="object">
+  Platform statistics
+  
+  <Expandable title="Stats Object">
+    <ResponseField name="totalTools" type="number">
+      Number of approved tools
+    </ResponseField>
+    <ResponseField name="totalCategories" type="number">
+      Number of unique categories
+    </ResponseField>
+    <ResponseField name="totalFeatured" type="number">
+      Number of featured tools
+    </ResponseField>
+    <ResponseField name="totalUpvotes" type="number">
+      Total upvotes across all tools
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+const stats = useQuery(api.tools.getStats, {});
+// Returns: { totalTools: 150, totalCategories: 12, totalFeatured: 8, totalUpvotes: 3420 }
+```
+
+---
+
+### getAdminStats
+
+Fetch detailed statistics including pending tools.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:254`
+
+**Authentication:** Admin required
+
+**Parameters:** None
+
+<ResponseField name="stats" type="object">
+  Detailed platform statistics
+  
+  <Expandable title="Admin Stats Object">
+    <ResponseField name="totalTools" type="number">
+      Total number of tools (approved + pending)
+    </ResponseField>
+    <ResponseField name="approvedCount" type="number">
+      Number of approved tools
+    </ResponseField>
+    <ResponseField name="pendingCount" type="number">
+      Number of pending tools
+    </ResponseField>
+    <ResponseField name="totalCategories" type="number">
+      Number of unique categories
+    </ResponseField>
+    <ResponseField name="totalFeatured" type="number">
+      Number of featured tools
+    </ResponseField>
+    <ResponseField name="totalUpvotes" type="number">
+      Total upvotes across all tools
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+const adminStats = useQuery(api.tools.getAdminStats, {});
+```
+
+---
+
+## Mutations
+
+### submitTool
+
+Submit a new tool for approval.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:149`
+
+**Authentication:** Required
+
+<ParamField path="name" type="string" required>
+  Tool name
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Short description (1-2 sentences)
+</ParamField>
+
+<ParamField path="longDescription" type="string" optional>
+  Detailed description
+</ParamField>
+
+<ParamField path="category" type="string" required>
+  Tool category (e.g., "Chatbots", "Image Generation")
+</ParamField>
+
+<ParamField path="tags" type="string[]" required>
+  Array of tags
+</ParamField>
+
+<ParamField path="websiteUrl" type="string" required>
+  Tool website URL
+</ParamField>
+
+<ParamField path="logoUrl" type="string" optional>
+  Tool logo URL
+</ParamField>
+
+<ParamField path="pricing" type="string" required>
+  Pricing model: "Free", "Freemium", or "Paid"
+</ParamField>
+
+<ParamField path="pricingDetails" type="string" optional>
+  Detailed pricing information (e.g., "Free tier available. Pro from $20/mo")
+</ParamField>
+
+<ParamField path="features" type="string[]" optional>
+  Array of features
+</ParamField>
+
+<ParamField path="useCases" type="string[]" optional>
+  Array of use cases
+</ParamField>
+
+<ParamField path="pros" type="string[]" optional>
+  Array of pros
+</ParamField>
+
+<ParamField path="cons" type="string[]" optional>
+  Array of cons
+</ParamField>
+
+<ParamField path="platforms" type="string[]" optional>
+  Supported platforms ("Web", "iOS", "Android", "Desktop", "API", "Chrome Extension")
+</ParamField>
+
+<ParamField path="twitterUrl" type="string" optional>
+  Twitter profile URL
+</ParamField>
+
+<ParamField path="githubUrl" type="string" optional>
+  GitHub repository URL
+</ParamField>
+
+<ParamField path="discordUrl" type="string" optional>
+  Discord server URL
+</ParamField>
+
+<ResponseField name="result" type="object">
+  Submission result
+  
+  <Expandable title="Result Object">
+    <ResponseField name="toolId" type="Id<'tools'>">
+      ID of the created tool
+    </ResponseField>
+    <ResponseField name="slug" type="string">
+      Generated URL slug
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+const submitTool = useMutation(api.tools.submitTool);
+
+const result = await submitTool({
+  name: "My AI Tool",
+  description: "An amazing AI tool for developers",
+  longDescription: "This tool helps developers build AI applications faster...",
+  category: "Development",
+  tags: ["ai", "development", "automation"],
+  websiteUrl: "https://myaitool.com",
+  logoUrl: "https://myaitool.com/logo.png",
+  pricing: "Freemium",
+  pricingDetails: "Free tier available. Pro from $29/mo",
+  features: [
+    "Real-time code generation",
+    "API integration",
+    "Team collaboration"
+  ],
+  useCases: [
+    "Building web applications",
+    "Automating repetitive tasks"
+  ],
+  pros: ["Fast", "Easy to use", "Great documentation"],
+  cons: ["Limited free tier"],
+  platforms: ["Web", "API"],
+  twitterUrl: "https://twitter.com/myaitool",
+  githubUrl: "https://github.com/myaitool"
+});
+
+// Returns: { toolId: "...", slug: "my-ai-tool" }
+```
+
+**Notes:**
+- Slug is automatically generated from the name
+- If slug already exists, timestamp is appended
+- Tool starts with `approved: false` (requires admin approval)
+- Tool is marked with `isNew: true`
+- Initial upvotes set to 0
+
+---
+
+### approveTool
+
+Approve a pending tool submission.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:207`
+
+**Authentication:** Admin required
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to approve
+</ParamField>
+
+<ParamField path="sendEmail" type="boolean" optional>
+  Whether to send approval email to submitter (not yet implemented)
+</ParamField>
+
+<ResponseField name="result" type="object">
+  <ResponseField name="success" type="boolean">
+    Always true on success
+  </ResponseField>
+</ResponseField>
+
+```typescript
+const approveTool = useMutation(api.tools.approveTool);
+
+await approveTool({
+  toolId: "jd7a8f9a8sd9f8a9sd8f9a" as Id<"tools">,
+  sendEmail: true
+});
+```
+
+---
+
+### rejectTool
+
+Reject and delete a pending tool submission.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:219`
+
+**Authentication:** Admin required
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to reject
+</ParamField>
+
+<ParamField path="reason" type="string" optional>
+  Rejection reason to send to submitter
+</ParamField>
+
+<ParamField path="sendEmail" type="boolean" optional>
+  Whether to send rejection email to submitter (not yet implemented)
+</ParamField>
+
+<ResponseField name="result" type="object">
+  <Expandable title="Result Object">
+    <ResponseField name="success" type="boolean">
+      Always true on success
+    </ResponseField>
+    <ResponseField name="tool" type="Tool">
+      The deleted tool data
+    </ResponseField>
+    <ResponseField name="reason" type="string | undefined">
+      Rejection reason if provided
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+const rejectTool = useMutation(api.tools.rejectTool);
+
+await rejectTool({
+  toolId: "jd7a8f9a8sd9f8a9sd8f9a" as Id<"tools">,
+  reason: "Duplicate submission",
+  sendEmail: true
+});
+```
+
+---
+
+### upvoteTool
+
+Increment the upvote count for a tool.
+
+**Source:** `/home/daytona/workspace/source/convex/tools.ts:284`
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to upvote
+</ParamField>
+
+**Returns:** `void`
+
+**Errors:**
+- `"Tool not found"` - If toolId doesn't exist
+
+```typescript
+const upvoteTool = useMutation(api.tools.upvoteTool);
+
+await upvoteTool({
+  toolId: tool._id
+});
+```
+
+**Note:** This mutation does not prevent duplicate upvotes from the same user. You may want to implement client-side tracking to prevent multiple upvotes.

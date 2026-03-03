@@ -1,0 +1,456 @@
+---
+title: Convex Backend
+description: Understanding queries, mutations, and real-time data
+---
+
+Convex provides a TypeScript serverless backend with automatic real-time synchronization. All backend logic is defined in the `convex/` directory.
+
+## Architecture Overview
+
+Convex functions are organized into three types:
+
+| Type | Use Case | Example |
+|------|----------|----------|
+| **Query** | Read data (GET) | `getTools`, `getToolBySlug` |
+| **Mutation** | Write data (POST/PUT/DELETE) | `submitTool`, `upvoteTool` |
+| **Action** | External API calls, AI, emails | `sendApprovalEmail` |
+
+## Queries
+
+Queries are **reactive** - they automatically re-run when data changes.
+
+### Basic Query Pattern
+
+```typescript convex/tools.ts:28-84
+export const getTools = query({
+  args: {
+    category: v.optional(v.string()),
+    pricing: v.optional(v.string()),
+    search: v.optional(v.string()),
+    sort: v.optional(v.string()), // "newest", "upvotes"
+  },
+  handler: async (ctx: QueryCtx, args) => {
+    let toolsQuery;
+
+    // Start with an index
+    if (args.category && args.category !== "All") {
+      toolsQuery = ctx.db
+        .query("tools")
+        .withIndex("by_category", (q) => q.eq("category", args.category!));
+    } else {
+      toolsQuery = ctx.db
+        .query("tools")
+        .withIndex("by_approved", (q) => q.eq("approved", true));
+    }
+
+    let tools = await toolsQuery.collect();
+
+    // Apply additional filters
+    if (args.category && args.category !== "All") {
+      tools = tools.filter((t) => t.approved);
+    }
+
+    if (args.pricing && args.pricing !== "All") {
+      tools = tools.filter((t) => t.pricing === args.pricing);
+    }
+
+    if (args.search) {
+      const searchLower = args.search.toLowerCase();
+      tools = tools.filter(
+        (t) =>
+          t.name.toLowerCase().includes(searchLower) ||
+          t.description.toLowerCase().includes(searchLower) ||
+          t.tags.some((tag) => tag.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Sort results
+    if (args.sort === "upvotes") {
+      tools.sort((a, b) => b.upvotes - a.upvotes);
+    } else {
+      tools.sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    return tools;
+  },
+});
+```
+
+<Note>
+Always start queries with an **index** using `.withIndex()`. Convex requires indexed queries for performance.
+</Note>
+
+### Query by Unique Field
+
+```typescript convex/tools.ts:86-94
+export const getToolBySlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx: QueryCtx, args: { slug: string }) => {
+    return await ctx.db
+      .query("tools")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .first(); // Returns first match or null
+  },
+});
+```
+
+### Query with Authentication
+
+```typescript convex/tools.ts:128-137
+export const getSubmittedTools = query({
+  args: {},
+  handler: async (ctx: QueryCtx) => {
+    const identity = await getIdentity(ctx);
+    return await ctx.db
+      .query("tools")
+      .withIndex("by_submittedBy", (q) => q.eq("submittedBy", identity.subject))
+      .collect();
+  },
+});
+```
+
+### Using Queries in React
+
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+
+function ToolsPage() {
+  const tools = useQuery(api.tools.getTools, {
+    category: "Image Generation",
+    sort: "upvotes"
+  });
+
+  if (tools === undefined) return <div>Loading...</div>;
+  
+  return (
+    <div>
+      {tools.map(tool => <ToolCard key={tool._id} tool={tool} />)}
+    </div>
+  );
+}
+```
+
+<Tip>
+Queries return `undefined` while loading, then update automatically when data changes. No need for manual refetching!
+</Tip>
+
+## Mutations
+
+Mutations modify database state.
+
+### Create (Insert)
+
+```typescript convex/tools.ts:149-205
+export const submitTool = mutation({
+  args: {
+    name: v.string(),
+    description: v.string(),
+    category: v.string(),
+    tags: v.array(v.string()),
+    websiteUrl: v.string(),
+    pricing: v.string(),
+    // ... more fields
+  },
+  handler: async (ctx: MutationCtx, args: any) => {
+    const identity = await getIdentity(ctx);
+    
+    // Generate slug
+    const slug = args.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "");
+
+    // Check for conflicts
+    const existing = await ctx.db
+      .query("tools")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    
+    const finalSlug = existing ? `${slug}-${Date.now()}` : slug;
+
+    // Insert new tool
+    const toolId = await ctx.db.insert("tools", {
+      name: args.name,
+      slug: finalSlug,
+      description: args.description,
+      category: args.category,
+      tags: args.tags,
+      websiteUrl: args.websiteUrl,
+      pricing: args.pricing,
+      upvotes: 0,
+      submittedBy: identity.subject,
+      approved: false,
+      createdAt: Date.now(),
+      isNew: true,
+      // ... more fields
+    });
+
+    return { toolId, slug: finalSlug };
+  },
+});
+```
+
+### Update (Patch)
+
+```typescript convex/tools.ts:207-217
+export const approveTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args: { toolId: Id<"tools"> }) => {
+    await checkAdmin(ctx);
+    await ctx.db.patch(args.toolId, { approved: true });
+    return { success: true };
+  },
+});
+```
+
+### Delete
+
+```typescript convex/tools.ts:219-232
+export const rejectTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    
+    // Get data before deletion (for emails, etc.)
+    const tool = await ctx.db.get(args.toolId);
+    
+    await ctx.db.delete(args.toolId);
+    return { success: true, tool, reason: args.reason };
+  },
+});
+```
+
+### Increment Counter
+
+```typescript convex/tools.ts:284-291
+export const upvoteTool = mutation({
+  args: { toolId: v.id("tools") },
+  handler: async (ctx: MutationCtx, args: { toolId: Id<"tools"> }) => {
+    const tool = await ctx.db.get(args.toolId);
+    if (!tool) throw new Error("Tool not found");
+    await ctx.db.patch(args.toolId, { upvotes: tool.upvotes + 1 });
+  },
+});
+```
+
+### Using Mutations in React
+
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+
+function UpvoteButton({ toolId }: { toolId: Id<"tools"> }) {
+  const upvoteTool = useMutation(api.tools.upvoteTool);
+  
+  return (
+    <button onClick={() => upvoteTool({ toolId })}>
+      Upvote
+    </button>
+  );
+}
+```
+
+## Authentication & Authorization
+
+Convex integrates with Clerk for user identity.
+
+### Get Current User
+
+```typescript convex/tools.ts:21-25
+async function getIdentity(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+  return identity;
+}
+```
+
+### Admin Check
+
+```typescript convex/tools.ts:6-19
+const getAdminIds = () => (process.env.NEXT_PUBLIC_ADMIN_USER_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+async function checkAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+
+  if (!getAdminIds().includes(identity.subject)) {
+    throw new Error("Unauthorized: Admin access required");
+  }
+  return identity;
+}
+```
+
+### Protected Query
+
+```typescript convex/tools.ts:139-147
+export const getPendingTools = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx); // Throws if not admin
+    return await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+  },
+});
+```
+
+<Warning>
+Always verify user identity in mutations. Never trust client-side authentication checks.
+</Warning>
+
+## Real-Time Subscriptions
+
+Convex queries are **reactive** - components automatically re-render when data changes.
+
+```typescript
+// Component A: Displays tools
+function ToolsList() {
+  const tools = useQuery(api.tools.getTools, {});
+  // Automatically updates when tools change
+  return tools?.map(tool => <div>{tool.name}</div>);
+}
+
+// Component B: Upvotes a tool
+function UpvoteButton({ toolId }) {
+  const upvote = useMutation(api.tools.upvoteTool);
+  return <button onClick={() => upvote({ toolId })}>Upvote</button>;
+}
+```
+
+When the upvote button is clicked:
+1. `upvoteTool` mutation runs
+2. Database is updated
+3. **All components** using `getTools` automatically re-render with new data
+
+<Tip>
+No manual cache invalidation or refetching needed - Convex handles it automatically!
+</Tip>
+
+## Aggregations & Statistics
+
+```typescript convex/tools.ts:234-252
+export const getStats = query({
+  handler: async (ctx: QueryCtx) => {
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+
+    const categories = new Set(approvedTools.map((t) => t.category));
+    const totalUpvotes = approvedTools.reduce((sum, t) => sum + t.upvotes, 0);
+    const featuredCount = approvedTools.filter((t) => t.featured).length;
+
+    return {
+      totalTools: approvedTools.length,
+      totalCategories: categories.size,
+      totalFeatured: featuredCount,
+      totalUpvotes,
+    };
+  },
+});
+```
+
+## Error Handling
+
+```typescript
+export const getToolBySlug = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const tool = await ctx.db
+      .query("tools")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .first();
+    
+    if (!tool) {
+      throw new Error("Tool not found");
+    }
+    
+    if (!tool.approved) {
+      throw new Error("Tool pending approval");
+    }
+    
+    return tool;
+  },
+});
+```
+
+Handle errors in React:
+
+```typescript
+function ToolPage({ slug }) {
+  const tool = useQuery(api.tools.getToolBySlug, { slug });
+  
+  if (tool === undefined) return <div>Loading...</div>;
+  if (tool === null) return <div>Tool not found</div>;
+  
+  return <div>{tool.name}</div>;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Start queries with indices">
+    Always use `.withIndex()` as the first step in a query for performance.
+    
+    ```typescript
+    // ✓ Good
+    ctx.db.query("tools").withIndex("by_category", q => q.eq("category", cat))
+    
+    // ✗ Bad - table scan
+    ctx.db.query("tools").filter(q => q.eq(q.field("category"), cat))
+    ```
+  </Accordion>
+  
+  <Accordion title="Validate inputs with Zod">
+    Use `v.string()`, `v.number()`, etc. in `args` to validate inputs automatically.
+    
+    ```typescript
+    args: {
+      email: v.string(), // Must be string
+      age: v.number(),   // Must be number
+      tags: v.array(v.string()), // Must be string array
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Keep queries pure">
+    Queries should only read data, never modify it. Mutations should modify data.
+  </Accordion>
+  
+  <Accordion title="Use optimistic updates">
+    For better UX, update UI immediately before mutation completes:
+    
+    ```typescript
+    const upvote = useMutation(api.tools.upvoteTool)
+      .withOptimisticUpdate((localStore, args) => {
+        const tool = localStore.getQuery(api.tools.getToolById, { toolId: args.toolId });
+        if (tool) localStore.setQuery(api.tools.getToolById, { toolId: args.toolId }, {
+          ...tool,
+          upvotes: tool.upvotes + 1
+        });
+      });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/development/database-schema">
+    Understand table structures and relationships
+  </Card>
+  <Card title="Authentication" icon="lock" href="/development/authentication">
+    Learn about Clerk + Convex auth integration
+  </Card>
+</CardGroup>

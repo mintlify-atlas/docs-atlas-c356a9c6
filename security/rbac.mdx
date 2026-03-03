@@ -1,0 +1,280 @@
+---
+title: Role-Based Access Control (RBAC)
+description: Admin whitelist configuration and server-side identity verification
+---
+
+## Overview
+
+AiVault implements **Role-Based Access Control (RBAC)** through a whitelist-based admin system. Only users whose Clerk User IDs are explicitly listed in the admin whitelist can access administrative functions.
+
+## Admin Whitelist Configuration
+
+### Environment Variable Setup
+
+Admin access is controlled via the `NEXT_PUBLIC_ADMIN_USER_IDS` environment variable:
+
+```env
+# Admin User IDs (comma-separated Clerk user IDs)
+# Users listed here can access the /admin dashboard to approve/reject tool submissions
+NEXT_PUBLIC_ADMIN_USER_IDS=user_2th1234567890,user_2th0987654321
+```
+
+<Warning>
+Never commit actual admin user IDs to version control. Use `.env.local` for local development and secure environment variable management in production.
+</Warning>
+
+### Multiple Admin Support
+
+The whitelist supports multiple administrators:
+
+- Comma-separated list of Clerk user IDs
+- Automatically trims whitespace
+- Filters out empty entries
+- No limit on number of admins
+
+## Server-Side Implementation
+
+### Convex Admin Check
+
+The `checkAdmin` function in `convex/tools.ts` enforces admin access:
+
+```typescript
+const getAdminIds = () => (process.env.NEXT_PUBLIC_ADMIN_USER_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+async function checkAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+
+  if (!getAdminIds().includes(identity.subject)) {
+    throw new Error("Unauthorized: Admin access required");
+  }
+  return identity;
+}
+```
+
+### Key Security Features
+
+<Steps>
+  <Step title="Identity Verification">
+    Uses `ctx.auth.getUserIdentity()` to get the authenticated user from Clerk's JWT token
+  </Step>
+  
+  <Step title="Authentication Check">
+    Throws `"Unauthenticated"` error if no valid identity is found
+  </Step>
+  
+  <Step title="Authorization Check">
+    Compares `identity.subject` (Clerk User ID) against the admin whitelist
+  </Step>
+  
+  <Step title="Error Handling">
+    Throws `"Unauthorized: Admin access required"` if user is not in whitelist
+  </Step>
+</Steps>
+
+## Protected Admin Operations
+
+The following Convex functions require admin privileges:
+
+### Get Pending Tools
+
+```typescript
+export const getPendingTools = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx);
+    return await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+  },
+});
+```
+
+### Approve Tool Submission
+
+```typescript
+export const approveTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    await ctx.db.patch(args.toolId, { approved: true });
+    return { success: true };
+  },
+});
+```
+
+### Reject Tool Submission
+
+```typescript
+export const rejectTool = mutation({
+  args: {
+    toolId: v.id("tools"),
+    reason: v.optional(v.string()),
+    sendEmail: v.optional(v.boolean()),
+  },
+  handler: async (ctx: MutationCtx, args) => {
+    await checkAdmin(ctx);
+    const tool = await ctx.db.get(args.toolId);
+    await ctx.db.delete(args.toolId);
+    return { success: true, tool, reason: args.reason };
+  },
+});
+```
+
+### Get Admin Statistics
+
+```typescript
+export const getAdminStats = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx);
+
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+
+    const pendingTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+
+    return {
+      totalTools: approvedTools.length + pendingTools.length,
+      approvedCount: approvedTools.length,
+      pendingCount: pendingTools.length,
+      // ... more stats
+    };
+  },
+});
+```
+
+## Client-Side Admin Check
+
+For UI elements, a client-side helper function is available in `lib/admin.ts`:
+
+```typescript
+const adminIds = (process.env.NEXT_PUBLIC_ADMIN_USER_IDS || "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+
+export function isAdmin(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  return adminIds.includes(userId);
+}
+```
+
+<Note>
+This client-side check is for **UI purposes only** (showing/hiding admin buttons). Real security is always enforced server-side in Convex functions.
+</Note>
+
+## Route Protection
+
+The `/admin` route is protected via Clerk middleware in `middleware.ts`:
+
+```typescript
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/submit(.*)",
+  "/admin(.*)",
+]);
+
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect();
+  }
+});
+```
+
+This ensures users must be authenticated before accessing admin pages, with additional authorization checks performed by Convex.
+
+## Finding Your Clerk User ID
+
+To add yourself or others as an admin:
+
+<Steps>
+  <Step title="Sign in to your application">
+    Authenticate using Clerk in your running AiVault instance
+  </Step>
+  
+  <Step title="Access Clerk Dashboard">
+    Go to [Clerk Dashboard](https://dashboard.clerk.com/) and select your application
+  </Step>
+  
+  <Step title="Find User ID">
+    Navigate to **Users** section and copy the User ID (starts with `user_`)
+  </Step>
+  
+  <Step title="Update Environment Variable">
+    Add the User ID to `NEXT_PUBLIC_ADMIN_USER_IDS` in your `.env.local` file
+  </Step>
+  
+  <Step title="Restart Development Server">
+    Restart both Next.js and Convex dev servers to apply changes
+  </Step>
+</Steps>
+
+## Security Considerations
+
+<Warning>
+**Critical Security Points:**
+
+- Admin checks run on **every** admin operation
+- Identity derived from **server-side Clerk tokens** (cannot be spoofed)
+- Whitelist stored in environment variables (never in client code)
+- No "temporary" or "guest" admin access
+- User IDs are permanent and cannot be changed by users
+</Warning>
+
+## Best Practices
+
+<Card title="Principle of Least Privilege" icon="shield-check">
+  Only grant admin access to users who absolutely need it. Regularly audit your admin list.
+</Card>
+
+<Card title="Secure Environment Variables" icon="lock">
+  Use secure secret management in production (Vercel Environment Variables, AWS Secrets Manager, etc.)
+</Card>
+
+<Card title="Monitor Admin Actions" icon="chart-line">
+  Consider adding audit logging for all admin operations (tool approvals, rejections, etc.)
+</Card>
+
+<Card title="Separate Staging Admins" icon="layers">
+  Use different admin user lists for development, staging, and production environments
+</Card>
+
+## Troubleshooting
+
+### "Unauthorized: Admin access required" Error
+
+1. Verify your User ID is correct (check Clerk Dashboard)
+2. Ensure `NEXT_PUBLIC_ADMIN_USER_IDS` is set correctly
+3. Restart both Next.js and Convex dev servers
+4. Clear browser cache and re-authenticate
+5. Check for typos or extra whitespace in user IDs
+
+### Admin Functions Not Working
+
+1. Confirm you're authenticated (signed in)
+2. Check that Convex deployment has the correct environment variable
+3. Verify `ctx.auth` is properly configured in Convex
+4. Check browser console for specific error messages
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Overview" icon="shield" href="/security/overview">
+    Learn about AiVault's overall security architecture
+  </Card>
+  
+  <Card title="Best Practices" icon="star" href="/security/best-practices">
+    Security best practices for production deployment
+  </Card>
+</CardGroup>

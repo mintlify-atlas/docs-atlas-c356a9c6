@@ -1,0 +1,351 @@
+---
+title: Configuration Files
+description: Understanding AiVault's configuration setup
+---
+
+## Overview
+
+AiVault uses several configuration files to customize the build process, styling, and development environment. This guide covers the key configuration files you'll work with.
+
+## Next.js Configuration
+
+The `next.config.ts` file contains the Next.js configuration.
+
+### Configuration Options
+
+```typescript next.config.ts
+import type {NextConfig} from 'next';
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  // Allow access to remote image placeholder.
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'logos.hunter.io',
+        port: '',
+        pathname: '/**',
+      },
+    ],
+  },
+  output: 'standalone',
+  transpilePackages: ['motion'],
+  webpack: (config, {dev}) => {
+    // HMR is disabled in AI Studio via DISABLE_HMR env var.
+    // Do not modify—file watching is disabled to prevent flickering during agent edits.
+    if (dev && process.env.DISABLE_HMR === 'true') {
+      config.watchOptions = {
+        ignored: /.*/,
+      };
+    }
+    return config;
+  },
+};
+
+export default nextConfig;
+```
+
+### Key Settings Explained
+
+<ParamField path="reactStrictMode" type="boolean" default="true">
+  Enables React's Strict Mode for additional development checks and warnings.
+</ParamField>
+
+<ParamField path="eslint.ignoreDuringBuilds" type="boolean" default="true">
+  Skips ESLint checks during production builds to speed up deployment.
+</ParamField>
+
+<ParamField path="typescript.ignoreBuildErrors" type="boolean" default="false">
+  Enforces TypeScript type checking during builds. Set to `false` to maintain code quality.
+</ParamField>
+
+<ParamField path="images.remotePatterns" type="array">
+  Configures allowed external image sources for Next.js Image optimization:
+  - **picsum.photos** - Placeholder images
+  - **logos.hunter.io** - Logo images for AI tools
+</ParamField>
+
+<ParamField path="output" type="string" default="standalone">
+  Generates a standalone build optimized for Docker containers and serverless deployments.
+</ParamField>
+
+<ParamField path="transpilePackages" type="array">
+  Packages to transpile. Currently transpiling `motion` (Framer Motion) for compatibility.
+</ParamField>
+
+### Adding Remote Image Domains
+
+To add a new remote image source:
+
+```typescript
+images: {
+  remotePatterns: [
+    // ... existing patterns
+    {
+      protocol: 'https',
+      hostname: 'your-domain.com',
+      port: '',
+      pathname: '/**',
+    },
+  ],
+}
+```
+
+## Tailwind CSS Configuration
+
+AiVault uses Tailwind CSS 4 with the new CSS-first configuration approach.
+
+### Global Styles
+
+The main Tailwind configuration is in `app/globals.css`:
+
+```css app/globals.css
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --radius-2xl: calc(var(--radius) + 8px);
+    --radius-3xl: calc(var(--radius) + 12px);
+    --radius-4xl: calc(var(--radius) + 16px);
+    --color-card: var(--card);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-muted: var(--muted);
+    --color-accent: var(--accent);
+    --color-border: var(--border);
+    /* ... more color variables */
+}
+```
+
+### Features
+
+- **Tailwind CSS 4** - Latest version with CSS-first configuration
+- **tw-animate-css** - Extended animation utilities
+- **shadcn/ui** - Pre-configured component styles
+- **Custom dark mode** - Custom variant for dark theme
+- **CSS variables** - Design tokens for colors and spacing
+
+### shadcn/ui Configuration
+
+The `components.json` file configures shadcn/ui components:
+
+```json components.json
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "rtl": false,
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  }
+}
+```
+
+## Convex Configuration
+
+Convex is configured through the `convex/` directory in your project.
+
+### Development Setup
+
+Start the Convex development server:
+
+```bash
+npx convex dev
+```
+
+This will:
+1. Connect to your Convex deployment
+2. Watch for schema changes
+3. Push updates automatically
+4. Provide real-time logs
+
+### Production Deployment
+
+The build script automatically handles Convex deployment:
+
+```json package.json
+{
+  "scripts": {
+    "build": "if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then npx convex deploy --cmd \"next build\"; else next build; fi"
+  }
+}
+```
+
+This ensures that:
+- If `CONVEX_DEPLOY_KEY` is set (production), Convex is deployed before building
+- Otherwise (development), only Next.js is built
+
+### Convex Environment Variables
+
+Convex automatically syncs environment variables. Add them in the Convex dashboard or via CLI:
+
+```bash
+npx convex env set CLERK_SECRET_KEY "sk_test_..."
+npx convex env set RESEND_API_KEY "re_..."
+```
+
+## TypeScript Configuration
+
+The `tsconfig.json` configures TypeScript compilation:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  }
+}
+```
+
+## Running the Development Server
+
+To run AiVault in development mode, you need two terminal windows:
+
+### Terminal 1: Convex Backend
+
+<CodeGroup>
+```bash npm
+npx convex dev
+```
+
+```bash yarn
+yarn convex dev
+```
+
+```bash pnpm
+pnpm convex dev
+```
+</CodeGroup>
+
+### Terminal 2: Next.js Frontend
+
+<CodeGroup>
+```bash npm
+npm run dev
+```
+
+```bash yarn
+yarn dev
+```
+
+```bash pnpm
+pnpm dev
+```
+</CodeGroup>
+
+## Available Scripts
+
+From `package.json`:
+
+<ParamField path="dev" type="command">
+  Starts the Next.js development server
+  ```bash
+  npm run dev
+  ```
+</ParamField>
+
+<ParamField path="build" type="command">
+  Builds the application for production with conditional Convex deployment
+  ```bash
+  npm run build
+  ```
+</ParamField>
+
+<ParamField path="start" type="command">
+  Starts the production server (after building)
+  ```bash
+  npm run start
+  ```
+</ParamField>
+
+<ParamField path="lint" type="command">
+  Runs ESLint to check for code quality issues
+  ```bash
+  npm run lint
+  ```
+</ParamField>
+
+<ParamField path="test" type="command">
+  Runs the Vitest test suite
+  ```bash
+  npm run test
+  ```
+</ParamField>
+
+<ParamField path="clean" type="command">
+  Cleans the Next.js build cache
+  ```bash
+  npm run clean
+  ```
+</ParamField>
+
+## Hot Module Replacement (HMR)
+
+<Info>
+  HMR is disabled in AI Studio environments to prevent flickering during agent edits. This is controlled by the `DISABLE_HMR` environment variable.
+</Info>
+
+For normal development, HMR is enabled by default and provides instant feedback as you edit files.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/development/database-schema">
+    Learn about the Convex database schema
+  </Card>
+  <Card title="Convex Backend" icon="code" href="/development/convex-backend">
+    Explore the Convex backend architecture
+  </Card>
+</CardGroup>

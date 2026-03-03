@@ -1,0 +1,368 @@
+---
+title: 'Reviews API'
+description: 'Complete reference for the Reviews API endpoints'
+icon: 'star'
+---
+
+## Overview
+
+The Reviews API allows users to rate and review AI tools. Authenticated users can add reviews, and anyone can view reviews for a specific tool.
+
+---
+
+## Queries
+
+### getReviews
+
+Fetch all reviews for a specific tool.
+
+**Source:** `/home/daytona/workspace/source/convex/reviews.ts:12`
+
+**Authentication:** Not required
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to fetch reviews for
+</ParamField>
+
+<ResponseField name="reviews" type="Review[]">
+  Array of reviews for the specified tool
+  
+  <Expandable title="Review Object">
+    <ResponseField name="_id" type="Id<'reviews'>">
+      Unique review identifier
+    </ResponseField>
+    <ResponseField name="toolId" type="Id<'tools'>">
+      ID of the reviewed tool
+    </ResponseField>
+    <ResponseField name="userId" type="string">
+      Clerk user ID of the reviewer
+    </ResponseField>
+    <ResponseField name="rating" type="number">
+      Rating value (typically 1-5)
+    </ResponseField>
+    <ResponseField name="comment" type="string">
+      Review text/comment
+    </ResponseField>
+    <ResponseField name="createdAt" type="number">
+      Timestamp in milliseconds
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
+
+function ToolReviews({ toolId }: { toolId: Id<"tools"> }) {
+  const reviews = useQuery(api.reviews.getReviews, { toolId });
+  
+  return (
+    <div>
+      <h2>Reviews</h2>
+      {reviews?.map(review => (
+        <div key={review._id}>
+          <div>Rating: {review.rating}/5</div>
+          <p>{review.comment}</p>
+          <small>{new Date(review.createdAt).toLocaleDateString()}</small>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**Notes:**
+- Reviews are returned in database order (not sorted)
+- You may want to sort by `createdAt` or `rating` client-side
+- No pagination is implemented (all reviews are returned)
+
+---
+
+## Mutations
+
+### addReview
+
+Add a new review for a tool.
+
+**Source:** `/home/daytona/workspace/source/convex/reviews.ts:22`
+
+**Authentication:** Required
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to review
+</ParamField>
+
+<ParamField path="rating" type="number" required>
+  Rating value (typically 1-5, but no validation is enforced)
+</ParamField>
+
+<ParamField path="comment" type="string" required>
+  Review text/comment
+</ParamField>
+
+**Returns:** `void`
+
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
+
+function AddReviewForm({ toolId }: { toolId: Id<"tools"> }) {
+  const addReview = useMutation(api.reviews.addReview);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      await addReview({
+        toolId,
+        rating,
+        comment
+      });
+      
+      // Reset form
+      setRating(5);
+      setComment("");
+      alert("Review submitted!");
+    } catch (error) {
+      if (error.message === "Unauthenticated") {
+        alert("Please sign in to leave a review");
+      }
+    }
+  };
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      <div>
+        <label>Rating:</label>
+        <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+          <option value={5}>5 - Excellent</option>
+          <option value={4}>4 - Good</option>
+          <option value={3}>3 - Average</option>
+          <option value={2}>2 - Poor</option>
+          <option value={1}>1 - Terrible</option>
+        </select>
+      </div>
+      
+      <div>
+        <label>Comment:</label>
+        <textarea
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          required
+          placeholder="Share your experience with this tool..."
+        />
+      </div>
+      
+      <button type="submit">Submit Review</button>
+    </form>
+  );
+}
+```
+
+**Behavior:**
+- Automatically captures the authenticated user's ID
+- Sets `createdAt` to current timestamp
+- No validation for duplicate reviews (same user can review multiple times)
+- No validation for rating range
+
+**Errors:**
+- `"Unauthenticated"` - User is not signed in
+
+---
+
+## Schema
+
+The reviews table has the following structure:
+
+```typescript
+reviews: defineTable({
+  userId: v.string(),        // Clerk user ID
+  toolId: v.id("tools"),     // Reference to tools table
+  rating: v.number(),        // Rating value
+  comment: v.string(),       // Review text
+  createdAt: v.number()      // Timestamp in milliseconds
+})
+  .index("by_toolId", ["toolId"])
+  .index("by_userId", ["userId"])
+```
+
+**Indices:**
+- `by_toolId` - Fast lookup of all reviews for a tool
+- `by_userId` - Fast lookup of all reviews by a user
+
+---
+
+## Example: Complete Review Feature
+
+```typescript
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
+import { useState } from "react";
+
+function ReviewsSection({ toolId }: { toolId: Id<"tools"> }) {
+  const reviews = useQuery(api.reviews.getReviews, { toolId });
+  const addReview = useMutation(api.reviews.addReview);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  
+  // Calculate average rating
+  const avgRating = reviews && reviews.length > 0
+    ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+    : 0;
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (comment.trim().length < 10) {
+      alert("Please write a more detailed review (at least 10 characters)");
+      return;
+    }
+    
+    try {
+      await addReview({ toolId, rating, comment });
+      setRating(5);
+      setComment("");
+      setShowForm(false);
+    } catch (error) {
+      if (error.message === "Unauthenticated") {
+        window.location.href = "/sign-in";
+      }
+    }
+  };
+  
+  // Sort reviews by date (newest first)
+  const sortedReviews = reviews
+    ? [...reviews].sort((a, b) => b.createdAt - a.createdAt)
+    : [];
+  
+  return (
+    <div className="reviews-section">
+      <div className="reviews-header">
+        <h2>Reviews</h2>
+        {reviews && reviews.length > 0 && (
+          <div className="rating-summary">
+            <span className="avg-rating">{avgRating.toFixed(1)}</span>
+            <span className="star-rating">{'⭐'.repeat(Math.round(avgRating))}</span>
+            <span className="review-count">({reviews.length} reviews)</span>
+          </div>
+        )}
+        <button onClick={() => setShowForm(!showForm)}>
+          {showForm ? "Cancel" : "Write a Review"}
+        </button>
+      </div>
+      
+      {showForm && (
+        <form onSubmit={handleSubmit} className="review-form">
+          <div>
+            <label>Rating:</label>
+            <div className="star-input">
+              {[1, 2, 3, 4, 5].map(star => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => setRating(star)}
+                  className={star <= rating ? 'active' : ''}
+                >
+                  ⭐
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div>
+            <label>Your Review:</label>
+            <textarea
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              required
+              minLength={10}
+              placeholder="Share your experience with this tool..."
+              rows={4}
+            />
+          </div>
+          
+          <button type="submit">Submit Review</button>
+        </form>
+      )}
+      
+      <div className="reviews-list">
+        {sortedReviews.length === 0 ? (
+          <p>No reviews yet. Be the first to review this tool!</p>
+        ) : (
+          sortedReviews.map(review => (
+            <div key={review._id} className="review-card">
+              <div className="review-header">
+                <span className="rating">{'⭐'.repeat(review.rating)}</span>
+                <span className="date">
+                  {new Date(review.createdAt).toLocaleDateString()}
+                </span>
+              </div>
+              <p className="comment">{review.comment}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Potential Enhancements
+
+The current API is basic. Consider these improvements:
+
+1. **Duplicate Prevention**: Prevent users from reviewing the same tool multiple times
+2. **Rating Validation**: Enforce 1-5 rating range
+3. **Edit/Delete**: Allow users to edit or delete their reviews
+4. **Helpful Votes**: Add upvote/downvote for helpful reviews
+5. **Pagination**: Implement pagination for tools with many reviews
+6. **Sorting**: Add server-side sorting options (newest, highest rated, etc.)
+7. **Moderation**: Add admin review approval/rejection
+8. **User Info**: Return user name/avatar with reviews (from Clerk)
+
+Example duplicate prevention:
+
+```typescript
+export const addReview = mutation({
+  args: {
+    toolId: v.id("tools"),
+    rating: v.number(),
+    comment: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await getIdentity(ctx);
+    
+    // Check for existing review
+    const existing = await ctx.db
+      .query("reviews")
+      .withIndex("by_userId", (q) => q.eq("userId", identity.subject))
+      .filter((q) => q.eq(q.field("toolId"), args.toolId))
+      .first();
+    
+    if (existing) {
+      throw new Error("You have already reviewed this tool");
+    }
+    
+    // Validate rating
+    if (args.rating < 1 || args.rating > 5) {
+      throw new Error("Rating must be between 1 and 5");
+    }
+    
+    await ctx.db.insert("reviews", {
+      toolId: args.toolId,
+      userId: identity.subject,
+      rating: args.rating,
+      comment: args.comment,
+      createdAt: Date.now(),
+    });
+  },
+});
+```

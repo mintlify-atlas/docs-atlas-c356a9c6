@@ -1,0 +1,237 @@
+---
+title: Admin Analytics
+description: Track platform metrics and statistics from the admin dashboard
+---
+
+The admin dashboard provides real-time analytics about the platform's content and user engagement.
+
+## Available Metrics
+
+All statistics are calculated in real-time from the `getAdminStats` query in `convex/tools.ts:254-282`.
+
+### Total Tools
+
+**Formula**: `approvedCount + pendingCount`
+
+The complete count of all tools in the system, including both approved tools visible to users and pending submissions awaiting review.
+
+```typescript
+return {
+  totalTools: approvedTools.length + pendingTools.length,
+  // ...
+};
+```
+
+### Approved Tools
+
+**Query**: All tools where `approved = true`
+
+The number of tools currently live and visible in the public directory. These tools can be:
+- Browsed by category
+- Found in search results  
+- Upvoted by users
+- Featured on the homepage
+
+```typescript
+const approvedTools = await ctx.db
+  .query("tools")
+  .withIndex("by_approved", (q) => q.eq("approved", true))
+  .collect();
+```
+
+### Pending Approvals
+
+**Query**: All tools where `approved = false`
+
+Tools submitted by users that are waiting for admin review. This is your review queue - each pending tool needs to be either approved or rejected.
+
+```typescript
+const pendingTools = await ctx.db
+  .query("tools")
+  .withIndex("by_approved", (q) => q.eq("approved", false))
+  .collect();
+```
+
+<Info>
+  The pending count is also displayed as a badge in the "Pending Approvals" section header.
+</Info>
+
+### Total Categories
+
+**Formula**: `Set(categories).size`
+
+The number of unique categories currently in use by approved tools. Categories are tracked from the approved tools only:
+
+```typescript
+const categories = new Set(approvedTools.map((t) => t.category));
+return {
+  totalCategories: categories.size,
+  // ...
+};
+```
+
+Common categories include:
+- AI Writing
+- Code Generation  
+- Image Generation
+- Chatbots
+- Productivity
+- Marketing
+- Research
+
+### Featured Tools
+
+**Filter**: Tools where `featured = true`
+
+The count of tools marked as featured. Featured tools typically appear:
+- On the homepage
+- In special "Featured" sections
+- At the top of category listings
+
+```typescript
+const featuredCount = approvedTools.filter((t) => t.featured).length;
+```
+
+<Note>
+  The featured flag is set in the database schema but requires custom admin logic to toggle. You may need to add a UI for managing featured status.
+</Note>
+
+### Total Upvotes
+
+**Formula**: Sum of all `upvotes` fields
+
+The aggregate upvote count across all approved tools. This represents total community engagement:
+
+```typescript
+const totalUpvotes = approvedTools.reduce((sum, t) => sum + t.upvotes, 0);
+```
+
+Upvotes indicate:
+- User engagement with the platform
+- Popular tools and categories  
+- Content quality
+- Community activity
+
+## Stats Dashboard UI
+
+The six metrics are displayed in a responsive grid on the admin dashboard at `app/admin/page.tsx:104-142`:
+
+```typescript
+const stats = [
+  { label: "Total Tools", value: adminStats?.totalTools ?? "—", icon: Layers, color: "text-primary" },
+  { label: "Approved", value: adminStats?.approvedCount ?? "—", icon: CheckCircle, color: "text-green-500" },
+  { label: "Pending", value: adminStats?.pendingCount ?? "—", icon: Clock, color: "text-yellow-500" },
+  { label: "Categories", value: adminStats?.totalCategories ?? "—", icon: Tag, color: "text-blue-500" },
+  { label: "Featured", value: adminStats?.totalFeatured ?? "—", icon: Star, color: "text-amber-500" },
+  { label: "Total Upvotes", value: adminStats?.totalUpvotes ?? "—", icon: TrendingUp, color: "text-primary" },
+];
+```
+
+### Visual Design
+
+Each stat card includes:
+- **Icon** with contextual color (green for approved, yellow for pending, etc.)
+- **Large numeric value** in bold tracking-tight font
+- **Small label** in muted text
+- **Card background** with subtle styling
+
+<CardGroup cols={2}>
+  <Card title="Loading State" icon="spinner">
+    While stats are loading, placeholder values show "—" (em dash)
+  </Card>
+  <Card title="Responsive Grid" icon="table-cells">
+    Grid adapts: 2 columns on mobile, 3 on tablet, 6 on desktop
+  </Card>
+</CardGroup>
+
+## Performance Optimization
+
+The stats query uses Convex database indices for optimal performance:
+
+### Index Usage
+
+```typescript
+// Efficient: Uses by_approved index
+.query("tools")
+.withIndex("by_approved", (q) => q.eq("approved", true))
+```
+
+### Why Indices Matter
+
+<Steps>
+  <Step title="Approved Tools Query">
+    Uses `by_approved` index to quickly fetch only approved tools
+  </Step>
+  
+  <Step title="Pending Tools Query">
+    Uses same index with `approved = false` for pending tools
+  </Step>
+  
+  <Step title="In-Memory Operations">
+    Calculations (categories, upvotes, featured count) happen in memory on the already-fetched data
+  </Step>
+</Steps>
+
+This approach ensures:
+- Fast query execution even with thousands of tools
+- No sequential scans of the entire database
+- Real-time stats without caching complexity
+
+## Public vs Admin Stats
+
+There's also a `getStats` query for public-facing statistics:
+
+```typescript
+export const getStats = query({
+  handler: async (ctx: QueryCtx) => {
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+
+    return {
+      totalTools: approvedTools.length,
+      totalCategories: categories.size,
+      totalFeatured: featuredCount,
+      totalUpvotes,
+    };
+  },
+});
+```
+
+**Key Differences**:
+
+| Metric | Public | Admin |
+|--------|--------|-------|
+| Total Tools | Approved only | Approved + Pending |
+| Pending Count | Not shown | Shown |
+| Approved Count | Not shown | Shown |
+| Auth Required | No | Yes (admin check) |
+
+<Warning>
+  The `getAdminStats` query requires admin authentication. Unauthenticated or non-admin users will receive an error.
+</Warning>
+
+## Monitoring Best Practices
+
+### Daily Checks
+
+- **Pending Count**: Keep this low by reviewing submissions promptly
+- **Approval Rate**: Monitor ratio of approved to total tools
+- **Category Distribution**: Ensure balanced content across categories
+
+### Growth Indicators
+
+- **Total Tools**: Should steadily increase as submissions grow
+- **Total Upvotes**: Indicates user engagement and platform activity
+- **Featured Tools**: Manually curate high-quality tools to feature
+
+### Quality Metrics
+
+- **Low pending count** = Efficient moderation
+- **High upvote count** = Strong community engagement  
+- **Diverse categories** = Broad platform appeal
+
+<Tip>
+  Consider exporting these stats to a time-series database for historical tracking and trend analysis.
+</Tip>

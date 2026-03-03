@@ -1,0 +1,164 @@
+---
+title: Installation
+description: Set up AiVault for local development
+---
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed and configured:
+
+- **Node.js 20+** - Required for Next.js 15 and modern JavaScript features
+- **npm, yarn, or pnpm** - Package manager of your choice
+- **Convex Account** - [Sign up at convex.dev](https://www.convex.dev/)
+- **Clerk Account** - [Sign up at clerk.com](https://clerk.com/)
+- **Resend Account** (Optional) - For email notifications [resend.com](https://resend.com/)
+
+## Installation Steps
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the AiVault repository to your local machine:
+
+    <CodeGroup>
+    ```bash npm
+    git clone https://github.com/seyarhasir/AiVault2.git
+    cd AiVault2
+    ```
+
+    ```bash yarn
+    git clone https://github.com/seyarhasir/AiVault2.git
+    cd AiVault2
+    ```
+
+    ```bash pnpm
+    git clone https://github.com/seyarhasir/AiVault2.git
+    cd AiVault2
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Install Dependencies">
+    Install all required packages using your preferred package manager:
+
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+
+    ```bash yarn
+    yarn install
+    ```
+
+    ```bash pnpm
+    pnpm install
+    ```
+    </CodeGroup>
+
+    This will install all dependencies including:
+    - Next.js 15.4.9
+    - React 19.2.1
+    - Convex 1.32.0
+    - Clerk Next.js 6.39.0
+    - Tailwind CSS 4.1.11
+    - And more...
+  </Step>
+
+  <Step title="Set Up Environment Variables">
+    Create a `.env.local` file in the root directory:
+
+    ```bash
+    cp .env.example .env.local
+    ```
+
+    See the [Environment Variables](/development/environment) page for detailed configuration.
+  </Step>
+
+  <Step title="Initialize Convex">
+    Set up your Convex backend:
+
+    <CodeGroup>
+    ```bash npm
+    npx convex dev
+    ```
+
+    ```bash yarn
+    yarn convex dev
+    ```
+
+    ```bash pnpm
+    pnpm convex dev
+    ```
+    </CodeGroup>
+
+    This will:
+    - Create a new Convex project (if needed)
+    - Set up database schemas
+    - Start the Convex development server
+    - Generate your `NEXT_PUBLIC_CONVEX_URL`
+  </Step>
+
+  <Step title="Configure Clerk Authentication">
+    1. Go to [clerk.com](https://clerk.com/) and create a new application
+    2. Copy your publishable key and secret key
+    3. Add them to your `.env.local` file
+    4. Configure sign-in and sign-up URLs (already set to `/sign-in` and `/sign-up`)
+  </Step>
+
+  <Step title="Start the Development Server">
+    In a new terminal window, start the Next.js development server:
+
+    <CodeGroup>
+    ```bash npm
+    npm run dev
+    ```
+
+    ```bash yarn
+    yarn dev
+    ```
+
+    ```bash pnpm
+    pnpm dev
+    ```
+    </CodeGroup>
+
+    Your application will be available at `http://localhost:3000`
+  </Step>
+</Steps>
+
+## Verify Installation
+
+Once both servers are running:
+
+1. **Convex Dev Server** should be running on port 3210 (or similar)
+2. **Next.js Dev Server** should be running on `http://localhost:3000`
+3. Navigate to `http://localhost:3000` in your browser
+4. You should see the AiVault homepage
+
+## Common Issues
+
+### Port Already in Use
+
+If port 3000 is already in use, you can specify a different port:
+
+```bash
+npm run dev -- -p 3001
+```
+
+### Convex Connection Issues
+
+Make sure your `NEXT_PUBLIC_CONVEX_URL` in `.env.local` matches the URL provided by `convex dev`.
+
+### Clerk Authentication Errors
+
+Ensure your Clerk keys are correctly copied and that your application domain is configured in the Clerk dashboard.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Environment Variables" icon="gear" href="/development/environment">
+    Configure all required environment variables
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/development/configuration">
+    Learn about Next.js and Tailwind configuration
+  </Card>
+</CardGroup>

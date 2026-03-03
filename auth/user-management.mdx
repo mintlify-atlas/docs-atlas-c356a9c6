@@ -1,0 +1,327 @@
+---
+title: 'User Management'
+description: 'Managing user profiles, sessions, and account settings in AiVault'
+---
+
+AiVault provides comprehensive user management features powered by Clerk, including profile management, session handling, and account settings.
+
+## User Profiles
+
+### UserButton Component
+
+AiVault uses Clerk's `UserButton` component to provide a dropdown menu for user account management:
+
+```tsx components/layout/Navbar.tsx
+import { UserButton } from "@clerk/nextjs";
+
+<UserButton afterSignOutUrl="/" />
+```
+
+**Features:**
+- Profile picture display
+- Account settings access
+- Sign out functionality
+- Customizable redirect after sign out
+
+### Mobile Navigation
+
+For mobile devices, the user profile is displayed with additional context:
+
+```tsx
+<SignedIn>
+  <div className="flex items-center gap-3 p-2 rounded-xl bg-secondary/20">
+    <UserButton afterSignOutUrl="/" showName />
+  </div>
+</SignedIn>
+```
+
+The `showName` prop displays the user's name alongside their avatar.
+
+## Accessing User Information
+
+### Using useAuth Hook
+
+The `useAuth` hook provides access to the current user's authentication state:
+
+```tsx
+import { useAuth } from "@clerk/nextjs";
+
+function MyComponent() {
+  const { userId, isLoaded, isSignedIn } = useAuth();
+  
+  if (!isLoaded) {
+    return <div>Loading...</div>;
+  }
+  
+  if (!isSignedIn) {
+    return <div>Please sign in</div>;
+  }
+  
+  return <div>User ID: {userId}</div>;
+}
+```
+
+**Available properties:**
+- `userId` - Unique identifier for the user
+- `isLoaded` - Whether auth state has loaded
+- `isSignedIn` - Whether user is authenticated
+- `sessionId` - Current session identifier
+
+### Using useConvexAuth Hook
+
+For Convex-specific authentication state:
+
+```tsx app/dashboard/page.tsx
+import { useConvexAuth } from "convex/react";
+import { useAuth } from "@clerk/nextjs";
+
+export default function Dashboard() {
+  const { userId, isLoaded } = useAuth();
+  const { isAuthenticated, isLoading: isConvexLoading } = useConvexAuth();
+  
+  if (!isLoaded || isConvexLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!userId || !isAuthenticated) {
+    return <SignInPrompt />;
+  }
+  
+  return <DashboardContent />;
+}
+```
+
+This ensures both Clerk and Convex authentication are ready before rendering.
+
+## Session Management
+
+### Automatic Session Handling
+
+Clerk automatically manages user sessions:
+
+- Sessions are created upon successful sign-in
+- Tokens are automatically refreshed
+- Sessions persist across page reloads
+- Sessions are synchronized across tabs
+
+### Protected Route Access
+
+When users access protected routes, AiVault checks their authentication status:
+
+```tsx app/dashboard/page.tsx
+if (!userId) {
+  return (
+    <div className="container mx-auto px-4 py-20 max-w-2xl text-center">
+      <h1>Sign In Required</h1>
+      <p>You must be signed in to view your dashboard.</p>
+    </div>
+  );
+}
+```
+
+### Session Expiration
+
+Clerk handles session expiration automatically:
+
+1. User session expires after inactivity
+2. User is redirected to sign-in page
+3. After sign-in, user returns to original page
+
+## User Dashboard
+
+AiVault provides a personalized dashboard for authenticated users:
+
+### Bookmarked Tools
+
+Users can view their saved AI tools:
+
+```tsx
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+
+const bookmarks = useQuery(
+  api.bookmarks.getBookmarks,
+  isAuthenticated ? {} : "skip"
+);
+```
+
+**Features:**
+- Display all bookmarked tools
+- Quick access to tool details
+- Remove bookmarks
+- Empty state with call-to-action
+
+### Submitted Tools
+
+Users can track their tool submissions:
+
+```tsx
+const submittedTools = useQuery(
+  api.tools.getSubmittedTools,
+  isAuthenticated ? {} : "skip"
+);
+```
+
+**Submission states:**
+- **Pending Review** - Awaiting admin approval
+- **Approved** - Live in the directory
+
+```tsx
+{tool.approved ? (
+  <Badge variant="secondary" className="bg-primary/10 text-primary">
+    <CheckCircle className="w-3 h-3 mr-1" /> Approved
+  </Badge>
+) : (
+  <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-400">
+    <Clock className="w-3 h-3 mr-1" /> Pending Review
+  </Badge>
+)}
+```
+
+## Account Settings
+
+### Accessing Settings
+
+Users can access their account settings through the `UserButton` dropdown:
+
+- **Profile** - Update name, avatar, and bio
+- **Security** - Change password, enable 2FA
+- **Connected Accounts** - Manage OAuth connections
+- **Delete Account** - Permanently remove account
+
+All account management is handled by Clerk's pre-built UI components.
+
+## Sign Out
+
+### Sign Out Flow
+
+Users can sign out from multiple locations in AiVault:
+
+1. Click the `UserButton` in the navigation bar
+2. Select "Sign out" from the dropdown
+3. User is redirected to the home page
+
+```tsx
+<UserButton afterSignOutUrl="/" />
+```
+
+The `afterSignOutUrl` prop ensures users are redirected to the homepage after signing out.
+
+### Post-Logout State
+
+After logout:
+- Session is terminated
+- User is redirected to specified URL
+- Protected routes become inaccessible
+- UI updates to show sign-in button
+
+## Role-Based Access
+
+### Admin Users
+
+AiVault supports admin roles for managing tool submissions:
+
+```tsx
+import { isAdmin } from "@/lib/admin";
+
+function AdminLink() {
+  const { userId } = useAuth();
+  
+  if (!userId || !isAdmin(userId)) return null;
+  
+  return (
+    <Link href="/admin"> {/* Application route */}
+      <ShieldCheck className="w-4 h-4" />
+      Admin
+    </Link>
+  );
+}
+```
+
+### Admin Configuration
+
+Admin users are configured via environment variable:
+
+```bash .env.local
+# Comma-separated Clerk user IDs
+NEXT_PUBLIC_ADMIN_USER_IDS=user_2abc123,user_2def456
+```
+
+To find a user's Clerk ID:
+1. Sign in to your application
+2. Open browser DevTools
+3. Check the `userId` from `useAuth()` hook
+4. Add the ID to the environment variable
+
+## Loading States
+
+AiVault handles various loading states during authentication:
+
+```tsx
+if (!isLoaded || isConvexLoading) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {[...Array(6)].map((_, i) => (
+        <Card key={i}>
+          <Skeleton className="h-32 w-full" />
+        </Card>
+      ))}
+    </div>
+  );
+}
+```
+
+This ensures a smooth user experience while authentication state is being determined.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always check isLoaded before rendering">
+    Wait for `isLoaded` from `useAuth()` to be true before checking `userId` or `isSignedIn`. This prevents flash of incorrect content.
+    
+    ```tsx
+    const { userId, isLoaded } = useAuth();
+    
+    if (!isLoaded) {
+      return <LoadingSpinner />;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use skip parameter for Convex queries">
+    Skip Convex queries when user is not authenticated to avoid unnecessary requests:
+    
+    ```tsx
+    const data = useQuery(
+      api.myQuery.get,
+      isAuthenticated ? { userId } : "skip"
+    );
+    ```
+  </Accordion>
+  
+  <Accordion title="Provide clear sign-in prompts">
+    When users aren't authenticated, show clear messaging about why sign-in is required:
+    
+    ```tsx
+    if (!userId) {
+      return (
+        <div>
+          <h1>Sign In Required</h1>
+          <p>You must be signed in to view your dashboard.</p>
+        </div>
+      );
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication Setup" icon="key" href="/auth/setup">
+    Learn how to set up Clerk authentication
+  </Card>
+  <Card title="Convex Backend" icon="database" href="/development/convex-backend">
+    Make authenticated queries to Convex
+  </Card>
+</CardGroup>

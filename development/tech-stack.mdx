@@ -1,0 +1,207 @@
+---
+title: Technology Stack
+description: Core technologies powering AiVault
+---
+
+AiVault is built with a modern, scalable tech stack optimized for real-time data and seamless user experience.
+
+## Core Technologies
+
+<CardGroup cols={2}>
+  <Card title="Next.js 15" icon="react" href="https://nextjs.org">
+    Latest App Router with React 19, server components, and streaming
+  </Card>
+  <Card title="Convex" icon="database" href="https://convex.dev">
+    Serverless database with real-time subscriptions and TypeScript support
+  </Card>
+  <Card title="Clerk" icon="lock" href="https://clerk.com">
+    Authentication and user management with JWT integration
+  </Card>
+  <Card title="Tailwind CSS" icon="paintbrush" href="https://tailwindcss.com">
+    Utility-first CSS framework (v4.1) with shadcn/ui components
+  </Card>
+</CardGroup>
+
+## Frontend Stack
+
+### Framework & UI
+
+```json package.json
+{
+  "next": "^15.4.9",
+  "react": "^19.2.1",
+  "react-dom": "^19.2.1"
+}
+```
+
+AiVault uses **Next.js 15** with the App Router architecture, leveraging:
+
+- **React Server Components** - Server-side rendering for optimal performance
+- **Streaming** - Progressive page loading for faster perceived performance
+- **Route Groups** - Organized route structure with layouts
+- **Parallel Routes** - Concurrent data fetching
+
+### Styling & Animation
+
+```json package.json
+{
+  "tailwindcss": "4.1.11",
+  "@tailwindcss/typography": "^0.5.19",
+  "framer-motion": "^12.34.4",
+  "lucide-react": "^0.553.0"
+}
+```
+
+- **Tailwind CSS v4** - Latest version with improved performance
+- **shadcn/ui** - Accessible component library built with Radix UI primitives
+- **Framer Motion** - Smooth animations and transitions
+- **Lucide React** - Beautiful icon library
+
+### Forms & Validation
+
+```json package.json
+{
+  "react-hook-form": "^7.71.2",
+  "@hookform/resolvers": "^5.2.2",
+  "zod": "^4.3.6"
+}
+```
+
+Forms use **React Hook Form** with **Zod** schema validation for type-safe form handling.
+
+## Backend Stack
+
+### Database & Backend
+
+```json package.json
+{
+  "convex": "^1.32.0"
+}
+```
+
+**Convex** provides:
+- Serverless TypeScript backend
+- Real-time data synchronization
+- Built-in caching and optimistic updates
+- Type-safe queries and mutations
+- Automatic schema migrations
+
+### Authentication
+
+```json package.json
+{
+  "@clerk/nextjs": "^6.39.0"
+}
+```
+
+**Clerk** integration features:
+- JWT-based authentication
+- Social logins (Google, GitHub, etc.)
+- User management dashboard
+- Protected routes middleware
+- Convex authentication sync
+
+### Email Service
+
+```json package.json
+{
+  "resend": "^6.9.3"
+}
+```
+
+**Resend** handles transactional emails for:
+- Tool submission notifications
+- Admin approval/rejection emails
+- User communications
+
+## AI Integration
+
+```json package.json
+{
+  "@google/genai": "^1.17.0"
+}
+```
+
+Google Gemini AI integration for:
+- Tool description generation
+- Content moderation
+- Search enhancements
+
+## Development Tools
+
+### Testing
+
+```json package.json
+{
+  "vitest": "^4.0.18",
+  "@testing-library/react": "^16.3.2",
+  "@testing-library/jest-dom": "^6.9.1",
+  "jsdom": "^28.1.0"
+}
+```
+
+Unit and integration testing with **Vitest** and React Testing Library.
+
+### Code Quality
+
+```json package.json
+{
+  "eslint": "9.39.1",
+  "eslint-config-next": "16.0.8",
+  "typescript": "5.9.3"
+}
+```
+
+- **TypeScript 5.9** - Type safety across the entire stack
+- **ESLint** - Code linting with Next.js config
+
+### Analytics
+
+```json package.json
+{
+  "@vercel/analytics": "^1.6.1"
+}
+```
+
+Vercel Analytics for performance monitoring and user insights.
+
+## Build & Deployment
+
+```json package.json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "if [ -n \"$CONVEX_DEPLOY_KEY\" ]; then npx convex deploy --cmd \"next build\"; else next build; fi",
+    "start": "next start"
+  }
+}
+```
+
+Deployment flow:
+1. **Convex** automatically deploys backend on push
+2. **Next.js** builds with SSR/SSG optimizations
+3. **Vercel** hosts the application with edge functions
+
+<Note>
+The build script conditionally deploys Convex before building Next.js when `CONVEX_DEPLOY_KEY` is present.
+</Note>
+
+## Why This Stack?
+
+<AccordionGroup>
+  <Accordion title="Real-time Updates">
+    Convex's reactive queries automatically sync data changes to all connected clients without manual WebSocket management.
+  </Accordion>
+  
+  <Accordion title="Type Safety">
+    TypeScript across the entire stack (frontend, backend, database schema) prevents runtime errors and improves developer experience.
+  </Accordion>
+  
+  <Accordion title="Developer Experience">
+    Hot reload, automatic deployments, built-in auth, and type-safe APIs reduce boilerplate and speed up development.
+  </Accordion>
+  
+  <Accordion title="Scalability">
+    Serverless architecture scales automatically. No server management or database optimization required.
+  </Accordion>
+</AccordionGroup>

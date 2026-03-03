@@ -1,0 +1,224 @@
+---
+title: 'Bookmarks API'
+description: 'Complete reference for the Bookmarks API endpoints'
+icon: 'bookmark'
+---
+
+## Overview
+
+The Bookmarks API allows authenticated users to save and manage their favorite AI tools. All endpoints require authentication.
+
+---
+
+## Queries
+
+### getBookmarks
+
+Fetch all bookmarked tools for the authenticated user.
+
+**Source:** `/home/daytona/workspace/source/convex/bookmarks.ts:12`
+
+**Authentication:** Required
+
+**Parameters:** None
+
+<ResponseField name="tools" type="Tool[]">
+  Array of bookmarked tools (null entries are filtered out)
+</ResponseField>
+
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function BookmarksPage() {
+  const bookmarks = useQuery(api.bookmarks.getBookmarks, {});
+  
+  return (
+    <div>
+      <h1>My Bookmarks</h1>
+      {bookmarks?.map(tool => (
+        <ToolCard key={tool._id} tool={tool} />
+      ))}
+    </div>
+  );
+}
+```
+
+**Notes:**
+- Returns the full tool objects, not just bookmark records
+- Automatically filters out any null tools (if a bookmarked tool was deleted)
+- Tools are returned in the order they were bookmarked
+
+**Errors:**
+- `"Unauthenticated"` - User is not signed in
+
+---
+
+### isBookmarked
+
+Check if a specific tool is bookmarked by the current user.
+
+**Source:** `/home/daytona/workspace/source/convex/bookmarks.ts:56`
+
+**Authentication:** Optional (returns `false` if not authenticated)
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to check
+</ParamField>
+
+<ResponseField name="isBookmarked" type="boolean">
+  `true` if the tool is bookmarked, `false` otherwise
+</ResponseField>
+
+```typescript
+import { useQuery } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function ToolPage({ toolId }: { toolId: Id<"tools"> }) {
+  const isBookmarked = useQuery(api.bookmarks.isBookmarked, { toolId });
+  
+  return (
+    <button>
+      {isBookmarked ? "Remove Bookmark" : "Add Bookmark"}
+    </button>
+  );
+}
+```
+
+**Notes:**
+- Returns `false` if user is not authenticated (does not throw error)
+- Useful for showing bookmark button states
+
+---
+
+## Mutations
+
+### toggleBookmark
+
+Add or remove a bookmark for a specific tool.
+
+**Source:** `/home/daytona/workspace/source/convex/bookmarks.ts:32`
+
+**Authentication:** Required
+
+<ParamField path="toolId" type="Id<'tools'>" required>
+  ID of the tool to bookmark/unbookmark
+</ParamField>
+
+<ResponseField name="bookmarked" type="boolean">
+  `true` if tool was bookmarked, `false` if it was unbookmarked
+</ResponseField>
+
+```typescript
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+
+function BookmarkButton({ toolId }: { toolId: Id<"tools"> }) {
+  const toggleBookmark = useMutation(api.bookmarks.toggleBookmark);
+  const isBookmarked = useQuery(api.bookmarks.isBookmarked, { toolId });
+  
+  const handleToggle = async () => {
+    const bookmarked = await toggleBookmark({ toolId });
+    if (bookmarked) {
+      console.log("Tool bookmarked!");
+    } else {
+      console.log("Bookmark removed");
+    }
+  };
+  
+  return (
+    <button onClick={handleToggle}>
+      {isBookmarked ? "🔖 Bookmarked" : "Add Bookmark"}
+    </button>
+  );
+}
+```
+
+**Behavior:**
+- If tool is already bookmarked: removes the bookmark and returns `false`
+- If tool is not bookmarked: creates a bookmark and returns `true`
+- Uses composite index for efficient lookup
+
+**Errors:**
+- `"Unauthenticated"` - User is not signed in
+
+---
+
+## Schema
+
+The bookmarks table has the following structure:
+
+```typescript
+bookmarks: defineTable({
+  userId: v.string(),     // Clerk user ID
+  toolId: v.id("tools")   // Reference to tools table
+})
+  .index("by_userId", ["userId"])
+  .index("by_toolId", ["toolId"])
+  .index("by_userId_and_toolId", ["userId", "toolId"])
+```
+
+**Indices:**
+- `by_userId` - Fast lookup of all bookmarks for a user
+- `by_toolId` - Fast lookup of all users who bookmarked a tool
+- `by_userId_and_toolId` - Fast lookup of specific bookmark (used by `toggleBookmark` and `isBookmarked`)
+
+---
+
+## Example: Complete Bookmark Feature
+
+```typescript
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
+import { Id } from "../convex/_generated/dataModel";
+
+function ToolDetailPage({ toolId }: { toolId: Id<"tools"> }) {
+  const tool = useQuery(api.tools.getToolById, { toolId });
+  const isBookmarked = useQuery(api.bookmarks.isBookmarked, { toolId });
+  const toggleBookmark = useMutation(api.bookmarks.toggleBookmark);
+  
+  const handleBookmark = async () => {
+    try {
+      await toggleBookmark({ toolId });
+    } catch (error) {
+      if (error.message === "Unauthenticated") {
+        // Redirect to sign in
+        window.location.href = "/sign-in";
+      }
+    }
+  };
+  
+  if (!tool) return <div>Loading...</div>;
+  
+  return (
+    <div>
+      <h1>{tool.name}</h1>
+      <p>{tool.description}</p>
+      <button onClick={handleBookmark}>
+        {isBookmarked ? "Remove from Bookmarks" : "Bookmark This Tool"}
+      </button>
+    </div>
+  );
+}
+
+function BookmarksPage() {
+  const bookmarks = useQuery(api.bookmarks.getBookmarks, {});
+  
+  return (
+    <div>
+      <h1>My Bookmarked Tools</h1>
+      {bookmarks === undefined ? (
+        <div>Loading...</div>
+      ) : bookmarks.length === 0 ? (
+        <div>No bookmarks yet. Start exploring tools!</div>
+      ) : (
+        <div className="grid">
+          {bookmarks.map(tool => (
+            <ToolCard key={tool._id} tool={tool} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+```

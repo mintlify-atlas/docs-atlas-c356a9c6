@@ -1,0 +1,135 @@
+---
+title: Admin Dashboard Overview
+description: Access and navigate the AiVault admin dashboard to manage tool submissions
+---
+
+The Admin Dashboard provides a centralized interface for managing tool submissions, reviewing pending content, and monitoring platform analytics.
+
+## Accessing the Admin Panel
+
+Admin access is controlled through environment variables. To become an administrator:
+
+1. Obtain your Clerk User ID from the access denied page or your Clerk dashboard
+2. Add your User ID to the `NEXT_PUBLIC_ADMIN_USER_IDS` environment variable in `.env.local`:
+
+```bash .env.local
+NEXT_PUBLIC_ADMIN_USER_IDS=user_abc123,user_def456
+```
+
+<Note>
+  Multiple admin IDs can be separated by commas. The IDs are trimmed automatically, so spacing doesn't matter.
+</Note>
+
+### Access Control Implementation
+
+The admin check is implemented in `lib/admin.ts:6-9`:
+
+```typescript
+export function isAdmin(userId: string | null | undefined): boolean {
+  if (!userId) return false;
+  return adminIds.includes(userId);
+}
+```
+
+Backend admin verification is handled in `convex/tools.ts:11-19` using the `checkAdmin` function:
+
+```typescript
+async function checkAdmin(ctx: QueryCtx | MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) throw new Error("Unauthenticated");
+
+  if (!getAdminIds().includes(identity.subject)) {
+    throw new Error("Unauthorized: Admin access required");
+  }
+  return identity;
+}
+```
+
+## Dashboard Features
+
+Once authenticated, admins can access `/admin` to view:
+
+### Real-time Statistics
+
+The dashboard displays six key metrics in a grid layout:
+
+<CardGroup cols={3}>
+  <Card title="Total Tools" icon="layer-group">
+    Combined count of approved and pending tools
+  </Card>
+  <Card title="Approved" icon="circle-check">
+    Number of tools visible to users
+  </Card>
+  <Card title="Pending" icon="clock">
+    Tools awaiting review
+  </Card>
+  <Card title="Categories" icon="tag">
+    Unique categories in use
+  </Card>
+  <Card title="Featured" icon="star">
+    Number of featured tools
+  </Card>
+  <Card title="Total Upvotes" icon="arrow-trend-up">
+    Aggregate upvotes across all tools
+  </Card>
+</CardGroup>
+
+### Pending Approvals Section
+
+The main section displays all pending tool submissions with:
+
+- **Tool preview card** - Logo, name, description, category, pricing
+- **Submission metadata** - Submitter ID, submission date, website link
+- **Tags display** - All tags associated with the tool
+- **Quick actions** - Approve, Reject, or View Details buttons
+
+<Info>
+  When there are no pending tools, the dashboard displays a "All caught up!" message.
+</Info>
+
+## Navigation
+
+From the admin dashboard you can:
+
+- Click **Details** on any tool to view the full submission (`/admin/tools/[id]`)
+- Use quick **Approve** or **Reject** actions directly from the list
+- Return to the main site using the navigation header
+
+## Stats Data Source
+
+Statistics are fetched from the `getAdminStats` query in `convex/tools.ts:254-282`:
+
+```typescript
+export const getAdminStats = query({
+  handler: async (ctx: QueryCtx) => {
+    await checkAdmin(ctx);
+
+    const approvedTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", true))
+      .collect();
+
+    const pendingTools = await ctx.db
+      .query("tools")
+      .withIndex("by_approved", (q) => q.eq("approved", false))
+      .collect();
+
+    const categories = new Set(approvedTools.map((t) => t.category));
+    const totalUpvotes = approvedTools.reduce((sum, t) => sum + t.upvotes, 0);
+    const featuredCount = approvedTools.filter((t) => t.featured).length;
+
+    return {
+      totalTools: approvedTools.length + pendingTools.length,
+      approvedCount: approvedTools.length,
+      pendingCount: pendingTools.length,
+      totalCategories: categories.size,
+      totalFeatured: featuredCount,
+      totalUpvotes,
+    };
+  },
+});
+```
+
+<Tip>
+  The admin dashboard uses Convex queries with proper indexing for optimal performance, even with large datasets.
+</Tip>
