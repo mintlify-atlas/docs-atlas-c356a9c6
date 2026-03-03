@@ -1,0 +1,117 @@
+{
+  "projectType": "saas",
+  "projectName": "AiVault",
+  "projectDescription": "A high-performance, curated directory to discover, share, and manage the best AI tools with real-time search and secure authentication.",
+  "theme": "palm",
+  "primaryColor": "#8B5CF6",
+  "lightColor": "#A78BFA",
+  "darkColor": "#6D28D9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "features"
+            ]
+          },
+          {
+            "group": "User Guide",
+            "pages": [
+              "user-guide/browsing-tools",
+              "user-guide/submitting-tools",
+              "user-guide/bookmarks",
+              "user-guide/search-filters"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "auth/setup",
+              "auth/user-management"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "development/installation",
+              "development/environment",
+              "development/configuration"
+            ]
+          },
+          {
+            "group": "Architecture",
+            "pages": [
+              "development/tech-stack",
+              "development/database-schema",
+              "development/convex-backend",
+              "development/authentication"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/overview",
+              "api/tools",
+              "api/bookmarks",
+              "api/reviews"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Admin",
+        "groups": [
+          {
+            "group": "Admin Guide",
+            "pages": [
+              "admin/overview",
+              "admin/moderation",
+              "admin/email-notifications",
+              "admin/analytics"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/rbac",
+              "security/best-practices"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time AI tool discovery with advanced search and filtering",
+    "Secure authentication with Clerk and server-side identity verification",
+    "Instant data synchronization powered by Convex serverless backend",
+    "Admin dashboard for content moderation and analytics",
+    "User bookmarks and tool submission workflow",
+    "Email notifications for approval/rejection feedback"
+  ],
+  "publicApiSurface": [
+    "getTools(category, pricing, search, sort)",
+    "getToolBySlug(slug)",
+    "getFeaturedTools()",
+    "submitTool(...toolData)",
+    "approveTool(toolId, sendEmail)",
+    "rejectTool(toolId, reason, sendEmail)",
+    "getStats()",
+    "getAdminStats()",
+    "upvoteTool(toolId)",
+    "getSubmittedTools()",
+    "getPendingTools()",
+    "getRelatedTools(category, excludeSlug)"
+  ]
+}
